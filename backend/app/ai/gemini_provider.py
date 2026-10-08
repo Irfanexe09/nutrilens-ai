@@ -182,3 +182,43 @@ class GeminiVisionAIProvider(AIProvider):
     ) -> List[AIRecommendation]:
         # Recommendations will be expanded in future phases
         return []
+
+    async def explain_meal_optimization(
+        self,
+        goal: str,
+        original_nutrition: Dict[str, Any],
+        optimized_nutrition: Dict[str, Any],
+        changes: List[str],
+    ) -> str:
+        prompt = (
+            f"You are the NutriLens Food Intelligence Explanation Assistant.\n"
+            f"Explain clearly and concisely (1-2 sentences) why the following proposed meal adjustments "
+            f"improve this meal for the user's '{goal}' goal.\n\n"
+            f"Original meal: {original_nutrition.get('calories')} kcal, {original_nutrition.get('protein')}g protein, {original_nutrition.get('fiber')}g fiber.\n"
+            f"Optimized meal: {optimized_nutrition.get('calories')} kcal, {optimized_nutrition.get('protein')}g protein, {optimized_nutrition.get('fiber')}g fiber.\n"
+            f"Specific modifications: {', '.join(changes)}.\n\n"
+            f"RULES:\n"
+            f"1. Explain the rationale in 1 or 2 encouraging sentences.\n"
+            f"2. Do NOT invent new numbers or foods.\n"
+            f"3. Do NOT give medical advice or diagnose any condition.\n"
+            f"4. Focus on satiety, energy balance, protein, and dietary fiber."
+        )
+        if self.client:
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
+                if response and response.text:
+                    return response.text.strip().replace("\n", " ")
+            except Exception:
+                pass
+
+        # Robust fallback
+        from app.ai.placeholder_provider import PlaceholderAIProvider
+        return await PlaceholderAIProvider().explain_meal_optimization(
+            goal=goal,
+            original_nutrition=original_nutrition,
+            optimized_nutrition=optimized_nutrition,
+            changes=changes,
+        )

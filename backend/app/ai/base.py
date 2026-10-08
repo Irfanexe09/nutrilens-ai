@@ -94,3 +94,14 @@ class AIProvider(ABC):
     ) -> List[AIRecommendation]:
         """Generate personalized improvement suggestions according to user goal."""
         pass
+
+    @abstractmethod
+    async def explain_meal_optimization(
+        self,
+        goal: str,
+        original_nutrition: Dict[str, Any],
+        optimized_nutrition: Dict[str, Any],
+        changes: List[str],
+    ) -> str:
+        """Produce a concise, factual explanation of why these deterministic changes improve the meal."""
+        pass

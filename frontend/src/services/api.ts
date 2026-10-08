@@ -11,6 +11,8 @@ import {
   ProfileWithTarget,
   DailyNutritionResponse,
   EvaluateMealResponse,
+  MealOptimizationResponse,
+  CandidateItem,
 } from '../types';
 
 const API_BASE = '/api';
@@ -239,6 +241,35 @@ export const api = {
   async getMeal(mealId: string): Promise<Meal> {
     const res = await fetch(`${API_BASE}/meals/${mealId}`, {
       headers: { ...getAuthHeader() },
+    });
+    return handleResponse<Meal>(res);
+  },
+
+  async optimizeMeal(mealId: string, goal?: string): Promise<MealOptimizationResponse> {
+    const params = new URLSearchParams();
+    if (goal) params.append('goal', goal);
+
+    const res = await fetch(`${API_BASE}/meals/${mealId}/optimize?${params.toString()}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader(),
+      },
+    });
+    return handleResponse<MealOptimizationResponse>(res);
+  },
+
+  async applyOptimization(
+    mealId: string,
+    data: { recommendation_id?: string; notes?: string; items: CandidateItem[] }
+  ): Promise<Meal> {
+    const res = await fetch(`${API_BASE}/meals/${mealId}/apply-optimization`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader(),
+      },
+      body: JSON.stringify(data),
     });
     return handleResponse<Meal>(res);
   },

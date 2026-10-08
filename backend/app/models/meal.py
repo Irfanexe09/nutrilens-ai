@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Float, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Float, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 
@@ -29,6 +29,11 @@ class Meal(Base):
     confidence_level = Column(String(32), default="MEDIUM", nullable=False)
     
     notes = Column(Text, nullable=True)
+    
+    # Phase 5: Optimization versioning and history tracking
+    parent_meal_id = Column(String(36), ForeignKey("meals.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_optimized_version = Column(Boolean, default=False, nullable=False)
+    optimization_notes = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

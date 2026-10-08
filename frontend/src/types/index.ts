@@ -280,3 +280,87 @@ export interface EvaluateMealResponse {
   insights: string[];
 }
 
+// Phase 5: AI Meal Optimizer Types
+export type MealIssue =
+  | 'HIGH_CALORIE'
+  | 'LOW_PROTEIN'
+  | 'LOW_FIBER'
+  | 'HIGH_FAT'
+  | 'HIGH_SODIUM'
+  | 'HIGH_SUGAR';
+
+export type ModificationType =
+  | 'REDUCE_PORTION'
+  | 'INCREASE_PORTION'
+  | 'ADD_FOOD'
+  | 'REMOVE_FOOD'
+  | 'REPLACE_FOOD';
+
+export interface MealModification {
+  type: ModificationType;
+  food_id?: number | null;
+  food_name: string;
+  original_portion?: number | null;
+  new_portion?: number | null;
+  unit: string;
+  percentage?: number | null;
+  reason: string;
+}
+
+export interface NutritionSnapshot {
+  calories: number;
+  protein: number;
+  carbohydrates: number;
+  fat: number;
+  fiber: number;
+  sugar?: number;
+  sodium?: number;
+  calorie_min?: number;
+  calorie_max?: number;
+  uncertainty_calories?: number;
+  confidence_level?: string;
+  formatted_estimate: string;
+}
+
+export interface CandidateItem {
+  food_id?: number | null;
+  food_name: string;
+  portion_value: number;
+  portion_unit: string;
+  calories: number;
+  protein: number;
+  carbohydrates: number;
+  fat: number;
+  fiber: number;
+  sugar?: number;
+  sodium?: number;
+  confidence_score?: number | null;
+  uncertainty_pct?: number;
+}
+
+export interface OptimizationRecommendation {
+  id: string;
+  title: string;
+  description: string;
+  changes: string[];
+  modifications: MealModification[];
+  original_nutrition: NutritionSnapshot;
+  optimized_nutrition: NutritionSnapshot;
+  calorie_delta: number;
+  protein_delta: number;
+  fiber_delta: number;
+  score: number;
+  confidence: string;
+  explanation: string;
+  items: CandidateItem[];
+}
+
+export interface MealOptimizationResponse {
+  meal_id: string;
+  goal: string;
+  issues: MealIssue[];
+  status_summary: string;
+  recommendations: OptimizationRecommendation[];
+}
+
+

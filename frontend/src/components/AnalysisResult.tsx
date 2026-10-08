@@ -2,16 +2,24 @@ import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   CheckCircle,
-  Scale,
-  Plus,
   Trash2,
   BookmarkCheck,
   ChevronRight,
   Info,
   Loader2,
   Target,
+  X,
+  Check,
 } from 'lucide-react';
-import { MealItem, NutritionBreakdown, FoodItem, OptimizationGoal, EvaluateMealResponse } from '../types';
+import {
+  MealItem,
+  NutritionBreakdown,
+  FoodItem,
+  OptimizationGoal,
+  EvaluateMealResponse,
+  MealOptimizationResponse,
+  OptimizationRecommendation,
+} from '../types';
 import { api } from '../services/api';
 
 interface AnalysisResultProps {
@@ -35,8 +43,16 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   const [selectedMealType, setSelectedMealType] = useState<string>('lunch');
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [savedMealId, setSavedMealId] = useState<string | null>(null);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluateMealResponse | null>(null);
+
+  // Phase 5: Optimizer State
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [optimizationData, setOptimizationData] = useState<MealOptimizationResponse | null>(null);
+  const [activeRecommendation, setActiveRecommendation] = useState<OptimizationRecommendation | null>(null);
+  const [appliedNotice, setAppliedNotice] = useState<string | null>(null);
 
   // Recalculate deterministic nutrition whenever meal items change
   const recalculateNutrition = async (currentItems: MealItem[]) => {
@@ -52,13 +68,16 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
       // Evaluate candidate meal against personalized daily budget if token exists
       if (api.getToken()) {
-        api.evaluateMeal({
-          meal_calories: result.total_calories,
-          meal_protein: result.total_protein,
-          meal_carbs: result.total_carbohydrates,
-          meal_fat: result.total_fat,
-          meal_fiber: result.total_fiber,
-        }).then(evalRes => setEvaluation(evalRes)).catch(() => {});
+        api
+          .evaluateMeal({
+            meal_calories: result.total_calories,
+            meal_protein: result.total_protein,
+            meal_carbs: result.total_carbohydrates,
+            meal_fat: result.total_fat,
+            meal_fiber: result.total_fiber,
+          })
+          .then((evalRes) => setEvaluation(evalRes))
+          .catch(() => {});
       }
     } catch (err) {
       console.error('Failed to calculate nutrition:', err);
@@ -78,17 +97,20 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     updated[index] = {
       ...updated[index],
       serving_count: clamped,
-      portion_value: Math.round(prevServingSize * clamped),
-      gram_weight: Math.round(prevServingSize * clamped),
+      portion_value: Number((prevServingSize * clamped).toFixed(1)),
+      gram_weight: Number((prevServingSize * clamped).toFixed(1)),
     };
     setItems(updated);
     recalculateNutrition(updated);
+    // Invalidate saved ID so re-optimization creates clean state
+    setIsSaved(false);
   };
 
   const handleRemoveItem = (index: number) => {
     const updated = items.filter((_: MealItem, i: number) => i !== index);
     setItems(updated);
     recalculateNutrition(updated);
+    setIsSaved(false);
   };
 
   const handleAddFoodItem = (food: FoodItem) => {
@@ -114,101 +136,119 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     const updated = [...items, newItem];
     setItems(updated);
     recalculateNutrition(updated);
+    setIsSaved(false);
   };
 
   const handleSaveMeal = async () => {
     if (items.length === 0) return;
     try {
-      await api.saveMeal({
+      const saved = await api.saveMeal({
         meal_type: selectedMealType,
-        notes: isDemo ? 'Saved from verified interactive demo' : `Scanned meal logged as ${selectedMealType}`,
+        notes: isDemo
+          ? 'Saved from verified interactive demo'
+          : `Scanned meal logged as ${selectedMealType}`,
         image_url: previewImageUrl,
         items,
       });
+      setSavedMealId(saved.id);
       setIsSaved(true);
       setSaveSuccessMessage(`Meal successfully recorded as ${selectedMealType}!`);
       setTimeout(() => setSaveSuccessMessage(null), 4000);
+      return saved.id;
     } catch (err) {
       console.error('Save failed:', err);
+      return null;
     }
   };
 
-  // Meal Optimizer simulation calculations based on the user's selected goal
-  const getOptimizerScenario = () => {
-    if (!nutrition) return null;
+  // Phase 5: Trigger Optimizer Engine
+  const handleTriggerOptimization = async (goalParam?: string) => {
+    if (items.length === 0) return;
+    setIsOptimizing(true);
+    setAppliedNotice(null);
 
-    if (selectedGoal === 'weight_loss') {
-      const suggestedCalories = Math.round(nutrition.total_calories * 0.78);
-      const suggestedProtein = Math.round(nutrition.total_protein * 1.15);
-      const suggestedCarbs = Math.round(nutrition.total_carbohydrates * 0.65);
-      const suggestedFat = Math.round(nutrition.total_fat * 0.75);
+    try {
+      let currentMealId = savedMealId;
+      if (!currentMealId) {
+        // Auto-save meal to establish base record for optimization
+        const saved = await api.saveMeal({
+          meal_type: selectedMealType,
+          notes: isDemo
+            ? 'Auto-saved for optimization'
+            : `Scanned meal logged as ${selectedMealType}`,
+          image_url: previewImageUrl,
+          items,
+        });
+        currentMealId = saved.id;
+        setSavedMealId(saved.id);
+        setIsSaved(true);
+      }
 
-      return {
-        title: 'Weight Loss Optimization Scenario',
-        recommendations: [
-          'Reduce primary rice/flatbread portion by approximately 25–30%.',
-          'Increase lean protein portion (skinless chicken / egg white / paneer) to maintain high satiety.',
-          'Add a portion of fiber-rich cucumber salad or roasted greens.',
-          'Limit deep-fried sides or high-fat gravies.',
-        ],
-        originalCalories: Math.round(nutrition.total_calories),
-        originalProtein: Math.round(nutrition.total_protein),
-        originalCarbs: Math.round(nutrition.total_carbohydrates),
-        originalFat: Math.round(nutrition.total_fat),
-        suggestedCalories,
-        suggestedProtein,
-        suggestedCarbs,
-        suggestedFat,
-      };
-    } else if (selectedGoal === 'muscle_gain') {
-      const suggestedCalories = Math.round(nutrition.total_calories * 1.12);
-      const suggestedProtein = Math.round(nutrition.total_protein * 1.4);
-      const suggestedCarbs = Math.round(nutrition.total_carbohydrates * 1.05);
-      const suggestedFat = Math.round(nutrition.total_fat * 1.0);
+      const activeGoal =
+        goalParam ||
+        (selectedGoal === 'muscle_gain'
+          ? 'MUSCLE_GAIN'
+          : selectedGoal === 'balanced'
+          ? 'MAINTENANCE'
+          : 'WEIGHT_LOSS');
 
-      return {
-        title: 'Muscle Synthesis Optimization Scenario',
-        recommendations: [
-          'Boost total protein to reach ~35–45g for this meal window.',
-          'Add a side of sprouted moong, curd, or boiled eggs.',
-          'Maintain complex carbohydrates for glycogen replenishment.',
-          'Stay well-hydrated to support protein metabolism.',
-        ],
-        originalCalories: Math.round(nutrition.total_calories),
-        originalProtein: Math.round(nutrition.total_protein),
-        originalCarbs: Math.round(nutrition.total_carbohydrates),
-        originalFat: Math.round(nutrition.total_fat),
-        suggestedCalories,
-        suggestedProtein,
-        suggestedCarbs,
-        suggestedFat,
-      };
-    } else {
-      const suggestedCalories = Math.round(nutrition.total_calories);
-      const suggestedProtein = Math.round(nutrition.total_protein * 1.1);
-      const suggestedCarbs = Math.round(nutrition.total_carbohydrates * 0.9);
-      const suggestedFat = Math.round(nutrition.total_fat * 0.95);
-
-      return {
-        title: 'Balanced Metabolic Optimization Scenario',
-        recommendations: [
-          'Distribute macronutrients towards a 25% Protein / 50% Carbs / 25% Fat caloric ratio.',
-          'Introduce dietary fiber (sambar/veggies) to flatten glycemic response.',
-          'Maintain regular portion timing.',
-        ],
-        originalCalories: Math.round(nutrition.total_calories),
-        originalProtein: Math.round(nutrition.total_protein),
-        originalCarbs: Math.round(nutrition.total_carbohydrates),
-        originalFat: Math.round(nutrition.total_fat),
-        suggestedCalories,
-        suggestedProtein,
-        suggestedCarbs,
-        suggestedFat,
-      };
+      const res = await api.optimizeMeal(currentMealId, activeGoal);
+      setOptimizationData(res);
+    } catch (err: any) {
+      console.error('Failed to generate meal optimizations:', err);
+    } finally {
+      setIsOptimizing(false);
     }
   };
 
-  const optimizerData = getOptimizerScenario();
+  // Phase 5: Apply Selected Optimization
+  const handleApplyOptimization = async (rec: OptimizationRecommendation) => {
+    if (!savedMealId) return;
+    setIsApplying(true);
+
+    try {
+      const newMeal = await api.applyOptimization(savedMealId, {
+        recommendation_id: rec.id,
+        notes: `Applied suggestion: ${rec.title}`,
+        items: rec.items,
+      });
+
+      // Map applied items back to client state
+      const appliedItems: MealItem[] = rec.items.map((it) => ({
+        food_id: it.food_id || undefined,
+        food_name: it.food_name,
+        serving_count: 1.0,
+        serving_size: it.portion_value,
+        serving_unit: it.portion_unit,
+        portion_value: it.portion_value,
+        portion_unit: it.portion_unit,
+        gram_weight: it.portion_value,
+        calories: it.calories,
+        protein: it.protein,
+        carbohydrates: it.carbohydrates,
+        fat: it.fat,
+        fiber: it.fiber,
+        sugar: it.sugar,
+        sodium: it.sodium,
+        uncertainty_pct: it.uncertainty_pct || 10.0,
+        confidence_level: 'MEDIUM',
+      }));
+
+      setItems(appliedItems);
+      setSavedMealId(newMeal.id);
+      setIsSaved(true);
+      setAppliedNotice(
+        `Applied "${rec.title}"! A new versioned meal record has been saved to your daily log (original meal preserved).`
+      );
+      setActiveRecommendation(null);
+      recalculateNutrition(appliedItems);
+      setOptimizationData(null);
+    } catch (err: any) {
+      console.error('Failed to apply optimization:', err);
+    } finally {
+      setIsApplying(false);
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -219,6 +259,9 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
               Nutritional Breakdown
             </h2>
+            {isRecalculating && (
+              <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+            )}
             {isDemo && (
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                 Interactive Demo
@@ -250,10 +293,29 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           <button
             onClick={handleSaveMeal}
             disabled={items.length === 0 || isSaved}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors shadow-xs"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold disabled:opacity-50 transition-colors shadow-xs"
           >
             <BookmarkCheck className="w-4 h-4" />
             {isSaved ? 'Meal Saved' : 'Save Meal'}
+          </button>
+
+          {/* Phase 5 Primary Optimizer CTA */}
+          <button
+            onClick={() => handleTriggerOptimization()}
+            disabled={items.length === 0 || isOptimizing}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm hover:shadow"
+          >
+            {isOptimizing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Finding improvements...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-emerald-200" />
+                Optimize My Meal
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -265,6 +327,13 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
         </div>
       )}
 
+      {appliedNotice && (
+        <div className="p-3 bg-teal-50 border border-teal-200 text-teal-800 text-xs rounded-xl flex items-center gap-2">
+          <Check className="w-4 h-4 text-teal-600 flex-shrink-0" />
+          <span>{appliedNotice}</span>
+        </div>
+      )}
+
       {/* Main Grid: Visual Summary + Macro Details */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Image + Primary Calorie Card */}
@@ -273,292 +342,209 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
               <div className="p-3 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500">
                 <span className="font-medium text-slate-700">Analyzed Image</span>
-                <span className="text-[11px] bg-slate-100 px-2 py-0.5 rounded">Verified</span>
+                <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+                  Multimodal Input
+                </span>
               </div>
               <img
                 src={previewImageUrl}
-                alt="Analyzed food"
-                className="w-full h-52 object-cover object-center bg-slate-50"
+                alt="Meal Analysis Preview"
+                className="w-full h-48 object-cover"
               />
             </div>
           )}
 
-          {/* Calorie Card with Honest Uncertainty */}
+          {/* Primary Deterministic Calorie Card */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                Total Energy
-                {isRecalculating && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Deterministic Energy
               </span>
-              <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                Honest Estimation
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  nutrition?.confidence_level === 'HIGH'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {nutrition?.confidence_level || 'MEDIUM'} Confidence
               </span>
             </div>
 
             <div>
               <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
-                {nutrition ? Math.round(nutrition.total_calories) : 0}{' '}
-                <span className="text-lg font-semibold text-slate-500">kcal</span>
+                ~{nutrition ? Math.round(nutrition.total_calories) : '—'}{' '}
+                <span className="text-sm font-semibold text-slate-500">kcal</span>
               </div>
-              <div className="text-xs text-slate-600 mt-1 flex items-center gap-1.5 font-medium">
-                <Scale className="w-3.5 h-3.5 text-slate-400" />
+              {nutrition && (
+                <div className="text-xs font-medium text-slate-600 mt-1">
+                  Range: {Math.round(nutrition.calorie_min)} –{' '}
+                  {Math.round(nutrition.calorie_max)} kcal (±
+                  {Math.round(nutrition.uncertainty_calories)} kcal)
+                </div>
+              )}
+            </div>
+
+            {/* Scientific Explanation of Uncertainty */}
+            <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+              <div className="flex items-start gap-1.5">
+                <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                 <span>
-                  {nutrition
-                    ? `Estimated range: ${Math.round(nutrition.calorie_min)} – ${Math.round(
-                        nutrition.calorie_max
-                      )} kcal (±${Math.round(nutrition.uncertainty_calories)} kcal)`
-                    : 'Awaiting items'}
+                  Honest uncertainty accounts for cooking oil absorption and visual 2D depth.
                 </span>
               </div>
             </div>
-
-            {/* Confidence Badge & Uncertainty Explanation */}
-            {nutrition && (
-              <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${
-                      nutrition.confidence_level === 'HIGH'
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : nutrition.confidence_level === 'LOW'
-                        ? 'bg-rose-50 text-rose-800 border-rose-200'
-                        : 'bg-amber-50 text-amber-800 border-amber-200'
-                    }`}
-                  >
-                    {nutrition.confidence_level || 'MEDIUM'} Confidence
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  {nutrition.uncertainty_explanation ||
-                    'Portions are visually estimated (±10–15% variance). Weighed gram input provides exact High confidence.'}
-                </p>
-              </div>
-            )}
-
-            {/* Macro Distribution Bar */}
-            {nutrition && (
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-                  Caloric Distribution
-                </span>
-                <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex">
-                  <div
-                    style={{ width: `${nutrition.macro_distribution.protein_pct}%` }}
-                    className="bg-emerald-500"
-                    title={`Protein: ${nutrition.macro_distribution.protein_pct}%`}
-                  />
-                  <div
-                    style={{ width: `${nutrition.macro_distribution.carbohydrates_pct}%` }}
-                    className="bg-amber-400"
-                    title={`Carbohydrates: ${nutrition.macro_distribution.carbohydrates_pct}%`}
-                  />
-                  <div
-                    style={{ width: `${nutrition.macro_distribution.fat_pct}%` }}
-                    className="bg-rose-400"
-                    title={`Fat: ${nutrition.macro_distribution.fat_pct}%`}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium pt-1">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" /> Protein{' '}
-                    {nutrition.macro_distribution.protein_pct}%
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" /> Carbs{' '}
-                    {nutrition.macro_distribution.carbohydrates_pct}%
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-rose-400" /> Fat{' '}
-                    {nutrition.macro_distribution.fat_pct}%
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Phase 3 Nutrition Intelligence Status Card */}
-          <div className="rounded-2xl bg-emerald-50/50 border border-emerald-200 p-5 space-y-2 text-xs text-slate-700">
-            <div className="flex items-center gap-2 text-emerald-950 font-bold">
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-              <span>Phase 3: Nutrition Engine Active</span>
+          {/* Macro Breakdown Summary */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Macronutrient Totals
+            </h3>
+
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-xs font-medium mb-1">
+                  <span className="text-slate-700">Protein</span>
+                  <span className="text-slate-900 font-bold">
+                    {nutrition ? nutrition.total_protein.toFixed(1) : 0} g
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (nutrition?.macro_distribution?.protein_pct || 0) * 1.5
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-medium mb-1">
+                  <span className="text-slate-700">Carbohydrates</span>
+                  <span className="text-slate-900 font-bold">
+                    {nutrition ? nutrition.total_carbohydrates.toFixed(1) : 0} g
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-amber-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (nutrition?.macro_distribution?.carbohydrates_pct || 0) * 1.2
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-medium mb-1">
+                  <span className="text-slate-700">Fat</span>
+                  <span className="text-slate-900 font-bold">
+                    {nutrition ? nutrition.total_fat.toFixed(1) : 0} g
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-rose-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (nutrition?.macro_distribution?.fat_pct || 0) * 1.5
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-medium mb-1">
+                  <span className="text-slate-700">Dietary Fiber</span>
+                  <span className="text-slate-900 font-bold">
+                    {nutrition ? nutrition.total_fiber.toFixed(1) : 0} g
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-teal-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        ((nutrition?.total_fiber || 0) / 25) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-            <p className="leading-relaxed text-slate-600">
-              Macronutrients and caloric totals are calculated programmatically from verified reference databases (ICMR-NIN IFCT 2017 & USDA FoodData Central).
-            </p>
-            <p className="text-[11px] text-emerald-800 font-medium">
-              Zero LLM arithmetic. Calculations are 100% deterministic and reproducible.
-            </p>
           </div>
         </div>
 
-        {/* Right Column (2 cols wide): Detailed Macros & Food Items confirmation */}
+        {/* Right Column: Confirmed Items Table + Optimizer + Daily Contribution */}
         <div className="lg:col-span-2 space-y-6">
-          {/* 4 Macro Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Protein
-              </span>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
-                {nutrition ? nutrition.total_protein : 0} <span className="text-xs font-normal text-slate-500">g</span>
-              </div>
-              <span className="text-[11px] text-emerald-600 font-medium block mt-0.5">Muscle & Repair</span>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Carbs
-              </span>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
-                {nutrition ? nutrition.total_carbohydrates : 0} <span className="text-xs font-normal text-slate-500">g</span>
-              </div>
-              <span className="text-[11px] text-amber-600 font-medium block mt-0.5">Primary Fuel</span>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Fats
-              </span>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
-                {nutrition ? nutrition.total_fat : 0} <span className="text-xs font-normal text-slate-500">g</span>
-              </div>
-              <span className="text-[11px] text-rose-600 font-medium block mt-0.5">Lipids & Hormones</span>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Dietary Fiber
-              </span>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
-                {nutrition ? nutrition.total_fiber : 0} <span className="text-xs font-normal text-slate-500">g</span>
-              </div>
-              <span className="text-[11px] text-teal-600 font-medium block mt-0.5">Gut Microbiome</span>
-            </div>
-          </div>
-
-          {/* Secondary Nutritional Metrics: Sugar & Sodium */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
-                  Total Sugar
-                </span>
-                <span className="text-sm font-bold text-slate-800">
-                  {nutrition ? (nutrition.total_sugar ?? 0) : 0} <span className="text-[11px] font-normal text-slate-500">g</span>
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400">Natural & added</span>
-            </div>
-
-            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
-                  Sodium
-                </span>
-                <span className="text-sm font-bold text-slate-800">
-                  {nutrition ? Math.round(nutrition.total_sodium ?? 0) : 0} <span className="text-[11px] font-normal text-slate-500">mg</span>
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400">Electrolytes</span>
-            </div>
-          </div>
-
-          {/* Confirmed Food Items Table with Portion Adjuster */}
+          {/* Confirmed Food Items List */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  Confirmed Meal Items & Portion Sizing
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Adjust portion multipliers (e.g. 0.75x or 1.5x) to see real-time deterministic updates.
-                </p>
-              </div>
-              <span className="text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md font-medium border border-emerald-100 self-start sm:self-auto">
-                {items.length} item{items.length === 1 ? '' : 's'} in meal
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">Confirmed Dishes & Portions</h3>
+              <span className="text-xs text-slate-500 font-medium">
+                {items.length} {items.length === 1 ? 'item' : 'items'} in meal
               </span>
             </div>
 
-            {items.length === 0 ? (
-              <div className="text-center py-8 text-slate-500 text-xs">
-                No food items currently selected. Add an item below to calculate nutrition.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {items.map((item: MealItem, idx: number) => (
-                  <div key={idx} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">{item.food_name}</span>
-                        <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100">
-                          ~{item.gram_weight ? Math.round(item.gram_weight) : Math.round(item.serving_size * item.serving_count)}g
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Base: {item.serving_size} {item.serving_unit} • {item.calories} kcal (P: {item.protein}g, C: {item.carbohydrates}g, F: {item.fat}g)
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        Variance margin: ±{item.uncertainty_pct}%
-                      </div>
-                    </div>
+            <div className="divide-y divide-slate-100">
+              {items.map((item, idx) => (
+                <div key={idx} className="py-3 flex items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">{item.food_name}</h4>
+                    <p className="text-xs text-slate-500">
+                      Serving: {item.portion_value} {item.portion_unit || item.serving_unit}
+                    </p>
+                  </div>
 
-                    <div className="flex items-center gap-3">
-                      {/* Portion count controls */}
-                      <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => handleServingChange(idx, item.serving_count - 0.25)}
-                          className="w-6 h-6 rounded bg-white text-slate-700 border border-slate-200 text-xs font-bold hover:bg-slate-100 flex items-center justify-center"
-                        >
-                          -
-                        </button>
-                        <span className="text-xs font-semibold px-2 text-slate-800">
-                          {item.serving_count.toFixed(2)}x
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleServingChange(idx, item.serving_count + 0.25)}
-                          className="w-6 h-6 rounded bg-white text-slate-700 border border-slate-200 text-xs font-bold hover:bg-slate-100 flex items-center justify-center"
-                        >
-                          +
-                        </button>
-                      </div>
-
-                      {/* Contribution */}
-                      <div className="text-right min-w-[70px]">
-                        <div className="text-xs font-bold text-slate-900">
-                          {Math.round(item.calories * item.serving_count)} kcal
-                        </div>
-                        <div className="text-[10px] text-slate-500">
-                          {(item.protein * item.serving_count).toFixed(1)}g P
-                        </div>
-                      </div>
-
-                      {/* Remove */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden text-xs">
                       <button
-                        onClick={() => handleRemoveItem(idx)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors p-1"
-                        title="Remove item"
+                        onClick={() => handleServingChange(idx, item.serving_count - 0.25)}
+                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        -
+                      </button>
+                      <span className="px-2.5 py-1 font-semibold text-slate-800">
+                        {item.serving_count}x
+                      </span>
+                      <button
+                        onClick={() => handleServingChange(idx, item.serving_count + 0.25)}
+                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold"
+                      >
+                        +
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {/* Quick Add dish dropdown */}
-            <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <button
+                      onClick={() => handleRemoveItem(idx)}
+                      className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
+                      title="Remove item"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick add dropdown */}
+            <div className="pt-2">
               <select
                 onChange={(e) => {
-                  const id = Number(e.target.value);
-                  const found = availableFoods.find((f) => f.id === id);
-                  if (found) {
-                    handleAddFoodItem(found);
-                    e.target.value = '';
-                  }
+                  const f = availableFoods.find((item) => item.id === parseInt(e.target.value));
+                  if (f) handleAddFoodItem(f);
+                  e.target.value = '';
                 }}
                 defaultValue=""
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-slate-700 font-medium focus:outline-emerald-500"
@@ -615,123 +601,373 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             </div>
           )}
 
-          {/* MEAL OPTIMIZER SECTION */}
-          {optimizerData && (
-            <div className="bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl border border-emerald-200 p-6 shadow-xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Optimize My Meal
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Goal-aligned recommendations with estimated before-and-after macro adjustments.
-                    </p>
-                  </div>
+          {/* PHASE 5: REAL AI MEAL OPTIMIZER SECTION */}
+          <div className="bg-gradient-to-br from-white to-emerald-50/40 rounded-2xl border border-emerald-200 p-6 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-emerald-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-5 h-5" />
                 </div>
-
-                {/* Goal Selector */}
-                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs self-start sm:self-auto">
-                  <button
-                    onClick={() => setSelectedGoal('weight_loss')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      selectedGoal === 'weight_loss'
-                        ? 'bg-emerald-600 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Weight Loss
-                  </button>
-                  <button
-                    onClick={() => setSelectedGoal('muscle_gain')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      selectedGoal === 'muscle_gain'
-                        ? 'bg-emerald-600 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Muscle Gain
-                  </button>
-                  <button
-                    onClick={() => setSelectedGoal('balanced')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      selectedGoal === 'balanced'
-                        ? 'bg-emerald-600 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Balanced
-                  </button>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Optimize My Meal</h3>
+                  <p className="text-xs text-slate-500">
+                    Deterministic alternatives tailored to your target with AI explanations.
+                  </p>
                 </div>
               </div>
 
-              {/* Suggestions List */}
-              <div className="space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Actionable Recommendations:
-                </span>
-                <ul className="space-y-1.5 text-xs text-slate-700">
-                  {optimizerData.recommendations.map((rec, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <ChevronRight className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                      <span>{rec}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Side-by-side comparison: Original vs Optimized */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                {/* Original */}
-                <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-2">
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Current Meal Estimate
-                  </div>
-                  <div className="text-2xl font-extrabold text-slate-900">
-                    {optimizerData.originalCalories} <span className="text-xs font-medium text-slate-500">kcal</span>
-                  </div>
-                  <div className="text-xs text-slate-600 space-x-3 font-medium">
-                    <span>Protein: {optimizerData.originalProtein}g</span>
-                    <span>Carbs: {optimizerData.originalCarbs}g</span>
-                    <span>Fat: {optimizerData.originalFat}g</span>
-                  </div>
-                </div>
-
-                {/* Suggested */}
-                <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 shadow-2xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
-                      Suggested Optimized Version
-                    </span>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                      Estimate
-                    </span>
-                  </div>
-                  <div className="text-2xl font-extrabold text-emerald-900">
-                    {optimizerData.suggestedCalories} <span className="text-xs font-medium text-emerald-700">kcal</span>
-                  </div>
-                  <div className="text-xs text-emerald-800 space-x-3 font-medium">
-                    <span>Protein: {optimizerData.suggestedProtein}g</span>
-                    <span>Carbs: {optimizerData.suggestedCarbs}g</span>
-                    <span>Fat: {optimizerData.suggestedFat}g</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Critical requirement: Explain that these are estimates */}
-              <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-1">
-                <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>
-                  <strong>Clinical transparency disclaimer:</strong> All optimized meal metrics are mathematical scenario projections and should not replace individualized clinical dietary advice.
-                </span>
+              {/* Goal Selector */}
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs self-start sm:self-auto">
+                <button
+                  onClick={() => {
+                    setSelectedGoal('weight_loss');
+                    handleTriggerOptimization('WEIGHT_LOSS');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    selectedGoal === 'weight_loss'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Weight Loss
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedGoal('muscle_gain');
+                    handleTriggerOptimization('MUSCLE_GAIN');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    selectedGoal === 'muscle_gain'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Muscle Gain
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedGoal('balanced');
+                    handleTriggerOptimization('MAINTENANCE');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    selectedGoal === 'balanced'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Balanced
+                </button>
               </div>
             </div>
-          )}
+
+            {/* Loading State */}
+            {isOptimizing ? (
+              <div className="py-12 text-center space-y-3">
+                <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-sm font-semibold text-slate-700">
+                  Finding ways to improve this meal…
+                </p>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Generating verified candidate modifications and recalculating nutrition deterministically.
+                </p>
+              </div>
+            ) : optimizationData ? (
+              <div className="space-y-6">
+                {/* Issues Detected Badges */}
+                {optimizationData.issues.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600">Focus Areas:</span>
+                    {optimizationData.issues.map((iss, i) => (
+                      <span
+                        key={i}
+                        className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200"
+                      >
+                        {iss.replace('_', ' ')}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Recommendations List (2-3 options) */}
+                <div className="space-y-4">
+                  {optimizationData.recommendations.map((rec, index) => (
+                    <div
+                      key={rec.id}
+                      className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-emerald-300 transition-all space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
+                            {index + 1}
+                          </span>
+                          <h4 className="text-sm font-bold text-slate-900">{rec.title}</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                            Fit Score: {Math.round(rec.score * 100)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600">{rec.description}</p>
+
+                      {/* Key Change Metrics Badges */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded ${
+                            rec.calorie_delta <= 0
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {rec.calorie_delta > 0 ? `+${rec.calorie_delta}` : rec.calorie_delta} kcal
+                        </span>
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded ${
+                            rec.protein_delta >= 0
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {rec.protein_delta > 0 ? `+${rec.protein_delta}` : rec.protein_delta}g protein
+                        </span>
+                        {rec.fiber_delta !== 0 && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
+                            {rec.fiber_delta > 0 ? `+${rec.fiber_delta}` : rec.fiber_delta}g fiber
+                          </span>
+                        )}
+                      </div>
+
+                      {/* AI Explanation Quote */}
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs text-slate-700 italic flex items-start gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        <span>"{rec.explanation}"</span>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          onClick={() => setActiveRecommendation(rec)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition"
+                        >
+                          View Changes
+                        </button>
+                        <button
+                          onClick={() => handleApplyOptimization(rec)}
+                          disabled={isApplying}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                        >
+                          {isApplying ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          Apply Suggestion
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="py-8 text-center space-y-3">
+                <Sparkles className="w-8 h-8 text-emerald-500 mx-auto" />
+                <h4 className="text-sm font-bold text-slate-800">
+                  Ready to optimize this meal?
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Click below to generate deterministic portion adjustments, protein pairings, and balanced options backed by verified Indian food data.
+                </p>
+                <button
+                  onClick={() => handleTriggerOptimization()}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+                >
+                  Generate Optimization Suggestions
+                </button>
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-2 border-t border-emerald-100">
+              <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>
+                <strong>Nutrition transparency notice:</strong> The optimizer provides general nutrition-oriented suggestions and does not provide medical advice.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* PHASE 5: BEFORE / AFTER COMPARISON MODAL */}
+      {activeRecommendation && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  Before vs After Comparison
+                </span>
+                <h3 className="text-lg font-bold text-slate-900 mt-1">
+                  {activeRecommendation.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setActiveRecommendation(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Specific Modification Changes List */}
+            <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <span className="text-xs font-bold text-slate-700">Detailed Adjustments:</span>
+              <ul className="space-y-1 text-xs text-slate-600">
+                {activeRecommendation.changes.map((ch, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <ChevronRight className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>{ch}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Side-by-Side Nutrition Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Original */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase text-slate-500">Original Meal</span>
+                  <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-semibold">
+                    Baseline
+                  </span>
+                </div>
+                <div className="text-3xl font-black text-slate-900">
+                  ~{Math.round(activeRecommendation.original_nutrition.calories)}{' '}
+                  <span className="text-xs font-normal text-slate-500">kcal</span>
+                </div>
+                <div className="space-y-1 text-xs text-slate-600">
+                  <div className="flex justify-between">
+                    <span>Protein:</span>
+                    <strong className="text-slate-800">
+                      {activeRecommendation.original_nutrition.protein}g
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Carbs:</span>
+                    <strong className="text-slate-800">
+                      {activeRecommendation.original_nutrition.carbohydrates}g
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Fat:</span>
+                    <strong className="text-slate-800">
+                      {activeRecommendation.original_nutrition.fat}g
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Fiber:</span>
+                    <strong className="text-slate-800">
+                      {activeRecommendation.original_nutrition.fiber}g
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Optimized */}
+              <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase text-emerald-800">
+                    Optimized Alternative
+                  </span>
+                  <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded font-bold">
+                    Suggested
+                  </span>
+                </div>
+                <div className="text-3xl font-black text-emerald-950">
+                  ~{Math.round(activeRecommendation.optimized_nutrition.calories)}{' '}
+                  <span className="text-xs font-normal text-emerald-700">kcal</span>
+                </div>
+                <div className="space-y-1 text-xs text-emerald-900">
+                  <div className="flex justify-between">
+                    <span>Protein:</span>
+                    <strong className="font-bold">
+                      {activeRecommendation.optimized_nutrition.protein}g{' '}
+                      {activeRecommendation.protein_delta !== 0 && (
+                        <span className="text-[10px] text-emerald-700">
+                          ({activeRecommendation.protein_delta > 0 ? '+' : ''}
+                          {activeRecommendation.protein_delta}g)
+                        </span>
+                      )}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Carbs:</span>
+                    <strong className="font-bold">
+                      {activeRecommendation.optimized_nutrition.carbohydrates}g
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Fat:</span>
+                    <strong className="font-bold">
+                      {activeRecommendation.optimized_nutrition.fat}g
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Fiber:</span>
+                    <strong className="font-bold">
+                      {activeRecommendation.optimized_nutrition.fiber}g{' '}
+                      {activeRecommendation.fiber_delta !== 0 && (
+                        <span className="text-[10px] text-emerald-700">
+                          ({activeRecommendation.fiber_delta > 0 ? '+' : ''}
+                          {activeRecommendation.fiber_delta}g)
+                        </span>
+                      )}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Uncertainty and Estimation Confidence */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1">
+              <div className="flex items-center justify-between font-semibold text-slate-800">
+                <span>
+                  {activeRecommendation.optimized_nutrition.formatted_estimate}
+                </span>
+                <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded text-slate-700">
+                  {activeRecommendation.confidence} Confidence
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Portion sizes and cooking method introduce natural recipe variance.
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setActiveRecommendation(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+              >
+                Keep Original Meal
+              </button>
+              <button
+                onClick={() => handleApplyOptimization(activeRecommendation)}
+                disabled={isApplying}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+              >
+                {isApplying ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                Apply This Version
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

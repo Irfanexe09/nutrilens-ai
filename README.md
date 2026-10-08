@@ -8,8 +8,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-30%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-67%20Passed-brightgreen.svg)]()
 
 ---
 
@@ -237,19 +236,100 @@ tests/test_nutrition_engine.py::test_determinism_across_multiple_runs PASSED [10
 ### Health
 - `GET /api/health` — Checks database connectivity, returns status and configured AI provider.
 
+### Authentication & Profiles (Phase 4)
+- `POST /api/auth/register` — Register new user with email and secure hashed password.
+- `POST /api/auth/login` — Authenticate and receive JWT bearer token.
+- `GET /api/profile` — Fetch authenticated user profile, BMR, TDEE, and daily macro targets.
+- `PUT /api/profile` — Update body metrics, activity level, and goal (automatically recomputes targets).
+- `GET /api/profile/daily-summary` — Real-time progress toward daily caloric and macro budgets.
+- `POST /api/profile/evaluate-meal` — Pre-flight evaluation of candidate meal against remaining budget.
+
 ### Food Intelligence Database
 - `GET /api/foods` — Search and filter foods with parameters `q`, `category`, `is_indian`, `skip`, `limit`.
 - `GET /api/foods/{id}` — Fetch detailed macro breakdown and recipe variance for a food.
 - `POST /api/foods` — Add a new verified food item to the catalog.
 
-### Meals & Calculation Engine
-- `POST /api/meals/calculate` — Deterministically computes macros, Atwater distribution, and uncertainty interval without saving.
+### Nutrition Calculation & Meals (Phase 3)
+- `POST /api/nutrition/calculate` — Deterministically computes macros, Atwater distribution, and uncertainty interval without saving.
 - `POST /api/meals` — Persists a user-confirmed meal and its constituent items.
 - `GET /api/meals/{id}` — Fetches recorded meal with formatted honest estimation string.
-- `GET /api/meals` — Lists recorded meals with pagination.
+- `GET /api/meals` — Lists recorded meals with pagination and daily aggregation.
 
-### Visual Analysis Pipeline
-- `POST /api/analyze` — Multipart image upload (`image`). Enforces file type validation (JPEG/PNG/WEBP), 10MB size limits, and PIL file integrity check. In Phase 1, returns the structured pipeline schema with clear Phase 2 roadmap notice.
+### AI Meal Optimizer (Phase 5)
+- `POST /api/meals/{id}/optimize` — Analyzes meal against user profile/goals, runs deterministic candidate generator, scores options, and attaches grounded AI explanations.
+- `POST /api/meals/{id}/apply-optimization` — Implements selected recommendation by creating a versioned child meal linked via `parent_meal_id`, keeping original intact.
+
+### Visual Analysis Pipeline (Phase 2)
+- `POST /api/analyze` — Multipart image upload (`image`). Multimodal vision analysis identifying dishes and estimating portions with confidence ratings without hallucinating calories.
+
+---
+
+## 🧠 Phase 5 — AI Meal Optimizer Architecture
+
+The Meal Optimizer solves the user question: *"How can I improve this meal for my goal?"*
+
+```
+Current Meal
+     │
+     ▼
+Deterministic Nutrition Engine (Truth Baseline)
+     │
+     ▼
+User Profile & Daily Macro Budget Target
+     │
+     ▼
+Optimization Rules & Issue Detection (e.g. HIGH_CALORIE, LOW_PROTEIN, LOW_FIBER)
+     │
+     ▼
+Candidate Generator (Deterministic Alterations: -25% Carbs, +Protein, +Fiber Raita)
+     │
+     ▼
+Nutrition Recalculation Engine (Pure Math — Zero LLM Arithmetic)
+     │
+     ▼
+Candidate Scorer (0.40 × Goal + 0.30 × Budget + 0.30 × Practicality)
+     │
+     ▼
+AI Explanation Layer (Grounded, Factual Context — No Numbers Invented)
+     │
+     ▼
+Versioned Persistence (Child Meal Linked to Parent Meal — Auditability Preserved)
+```
+
+### 1. Architectural Guardrails: The LLM Does Not Do Arithmetic
+- The LLM never calculates calories, proteins, carbs, or fats.
+- The LLM never invents food database records or serving ratios.
+- The backend owns all numeric calculations deterministically through `NutritionCalculationService`.
+
+### 2. Candidate Generation Strategies Across Goals
+- **Weight Loss (`WEIGHT_LOSS`)**: Moderates calorie-dense staples by 20–30% (e.g., cutting biryani rice or fried components) and suggests pairing low-calorie fiber/raita.
+- **Muscle Gain (`MUSCLE_GAIN`)**: Boosts lean protein portions (e.g., +100g grilled tandoori chicken or +100g paneer) while moderating excess fats.
+- **Maintenance / General Health (`MAINTENANCE`, `GENERAL_HEALTH`)**: Creates balanced composites with balanced macronutrient distributions and boosts dietary fiber.
+- **Weight Gain (`WEIGHT_GAIN`)**: Recommends healthy, nutrient-dense caloric surpluses (e.g., whole grain roti, curd, healthy fats).
+
+### 3. Transparent Scoring Methodology
+Each candidate modification is scored on a normalized scale ($0.0 \dots 1.0$):
+$$\text{Total Score} = 0.40 \times \text{Goal Alignment} + 0.30 \times \text{Daily Budget Fit} + 0.30 \times \text{Practicality}$$
+
+- **Goal Alignment (40%)**: Rewards caloric direction aligned with goal (deficit for weight loss, surplus for weight gain, protein density for muscle gain).
+- **Daily Budget Fit (30%)**: Scores how well the meal fits into the user's remaining daily allowance.
+- **Practicality (30%)**: Heavy penalty on extreme changes (cutting $>50\%$ of a staple is penalized for poor satiety and sustainability).
+
+### 4. Grounded AI Explanation Layer
+Explanations are generated via `explain_meal_optimization` in `AIProvider`. The LLM receives the pre-calculated, verified numbers and provides human-readable context on why the substitution supports the user's metabolism without inventing new figures.
+
+### 5. Versioned Meal Persistence
+When a user clicks **"Apply Suggestion"**:
+1. The original meal is **never overwritten or deleted**.
+2. A new `Meal` row is created with `parent_meal_id = original_meal.id`, `is_optimized_version = True`, and descriptive `optimization_notes`.
+3. Complete auditability and historical tracking are preserved.
+4. User authorization is enforced: users can only optimize and mutate their own meals.
+
+---
+
+## ⚕️ Nutrition & Health Disclaimer
+
+> **IMPORTANT**: NutriLens is an educational and lifestyle nutrition estimation system. Calculated Basal Metabolic Rates (BMR), Total Daily Energy Expenditures (TDEE), and meal optimization recommendations are **estimates based on population averages** (Mifflin-St Jeor equation and verified reference databases) and do **not** constitute medical advice, clinical dietary prescriptions, or medical treatment plans. Always consult a certified dietitian or physician for clinical dietary requirements.
 
 ---
 
@@ -262,10 +342,9 @@ tests/test_nutrition_engine.py::test_determinism_across_multiple_runs PASSED [10
   - Swappable `AIProvider` abstraction layer
   - Seeded database of 27+ authentic Indian dishes
   - Reusable Result UI with interactive portion adjuster
-  - "Optimize My Meal" scenario projection preview
   - Docker Compose orchestration & PostgreSQL Alembic migrations
   - 17 automated tests passing
-- [x] **Phase 2: Real AI Food Analysis (Current)**
+- [x] **Phase 2: Real AI Food Analysis (Completed)**
   - Extended `AIProvider` abstraction with `GeminiVisionAIProvider` (Google Gemini Multimodal Vision)
   - Dedicated system prompt engineering tailored for visual recognition and regional Indian cuisine
   - Conservative portion estimation (no false precision)
@@ -273,10 +352,24 @@ tests/test_nutrition_engine.py::test_determinism_across_multiple_runs PASSED [10
   - Reusable `FoodConfirmation` review interface with edit, remove, and add capabilities
   - Complete separation: AI identifies food & portions; nutrition calculation deferred to Phase 3
   - 30 automated unit, integration, and E2E tests passing
-- [ ] **Phase 3: Deterministic Nutrition Integration**
-  - Connect confirmed food items and portions directly to the nutrition database
-  - Dynamic portion recalculation and macro aggregation
-- [ ] **Phase 4: Personalization, History & Auth**
-  - JWT user authentication
-  - Daily/weekly historical macronutrient analytics
-  - Longitudinal diet trend tracking
+- [x] **Phase 3: Nutrition Intelligence Engine (Completed)**
+  - Programmatic, deterministic Nutrition Calculation Engine (`NutritionCalculationService`)
+  - Reference serving scaling (100g basis, piece-based, milliliter liquid density)
+  - Macronutrient Atwater distribution and honest uncertainty intervals
+  - 41 automated tests passing
+- [x] **Phase 4: Personalization & Daily Nutrition Intelligence (Completed)**
+  - User profiles with age, sex, height, weight, activity level, and goals
+  - Validated Mifflin-St Jeor BMR and Katch-McArdle TDEE calculations
+  - Calorie floors (1,200 kcal women / 1,500 kcal men) and safety guardrails
+  - JWT authentication and secure user data isolation
+  - Daily aggregated progress tracking and pre-flight meal budget evaluation
+  - 59 automated tests passing
+- [x] **Phase 5: AI Meal Optimizer (Completed)**
+  - Objective meal imbalance detection (`MealIssueAnalyzer`)
+  - Multi-candidate generator with verified database substitutions
+  - Deterministic recalculation pipeline with zero LLM arithmetic
+  - Normalized scoring algorithm ($0.40 \times \text{Goal} + 0.30 \times \text{Budget} + 0.30 \times \text{Practicality}$)
+  - Grounded AI explanation layer via `explain_meal_optimization`
+  - Versioned meal persistence with `parent_meal_id` linking
+  - Interactive Before/After comparison modal with honest uncertainty
+  - 67 automated unit, integration, and security tests passing

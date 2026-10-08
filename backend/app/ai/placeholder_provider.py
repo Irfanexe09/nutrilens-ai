@@ -105,3 +105,45 @@ class PlaceholderAIProvider(AIProvider):
         self, meal_summary: Dict[str, Any], user_goal: str = "balanced"
     ) -> List[AIRecommendation]:
         return []
+
+    async def explain_meal_optimization(
+        self,
+        goal: str,
+        original_nutrition: Dict[str, Any],
+        optimized_nutrition: Dict[str, Any],
+        changes: List[str],
+    ) -> str:
+        orig_cal = original_nutrition.get("calories", 0)
+        opt_cal = optimized_nutrition.get("calories", 0)
+        orig_pro = original_nutrition.get("protein", 0)
+        opt_pro = optimized_nutrition.get("protein", 0)
+        orig_fib = original_nutrition.get("fiber", 0)
+        opt_fib = optimized_nutrition.get("fiber", 0)
+
+        cal_diff = round(opt_cal - orig_cal)
+        pro_diff = round(opt_pro - orig_pro, 1)
+        fib_diff = round(opt_fib - orig_fib, 1)
+
+        parts = []
+        if cal_diff < -50:
+            parts.append(f"lowers total energy by ~{abs(cal_diff)} kcal to support your caloric target")
+        elif cal_diff > 50:
+            parts.append(f"adds ~{cal_diff} nutrient-dense kcal toward your energy requirement")
+
+        if pro_diff >= 2.0:
+            parts.append(f"boosts protein by +{pro_diff}g to enhance satiety and muscle preservation")
+        elif pro_diff >= -1.0 and cal_diff < -50:
+            parts.append("keeps essential protein density high")
+
+        if fib_diff >= 1.5:
+            parts.append(f"increases dietary fiber by +{fib_diff}g for sustained fullness and digestive balance")
+
+        if parts:
+            explanation = "This adjustment " + ", ".join(parts[:-1])
+            if len(parts) > 1:
+                explanation += f", and {parts[-1]}."
+            else:
+                explanation = f"This adjustment {parts[0]}."
+            return explanation
+
+        return "This modification refines the meal's macronutrient balance to better support your current goal."

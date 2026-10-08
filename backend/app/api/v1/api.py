@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     auth,
     profile,
     daily_nutrition,
+    optimizer,
 )
 
 api_router = APIRouter()
@@ -18,5 +19,6 @@ api_router.include_router(profile.router)
 api_router.include_router(daily_nutrition.router)
 api_router.include_router(foods.router)
 api_router.include_router(meals.router)
+api_router.include_router(optimizer.router)
 api_router.include_router(analyze.router)
 api_router.include_router(nutrition.router)

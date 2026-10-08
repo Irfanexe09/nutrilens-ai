@@ -74,6 +74,9 @@ class MealResponse(MealBase):
     uncertainty_calories: float
     confidence_level: Optional[str] = "MEDIUM"
     formatted_estimate: Optional[str] = None
+    parent_meal_id: Optional[str] = None
+    is_optimized_version: bool = False
+    optimization_notes: Optional[str] = None
     items: List[MealItemResponse] = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
