@@ -15,11 +15,14 @@ class MealRepository:
 
     @staticmethod
     def list_meals(
-        db: Session, skip: int = 0, limit: int = 20
+        db: Session, skip: int = 0, limit: int = 20, user_id: Optional[str] = None
     ) -> Tuple[List[Meal], int]:
-        total = db.query(Meal).count()
+        query = db.query(Meal)
+        if user_id is not None:
+            query = query.filter(Meal.user_id == user_id)
+        total = query.count()
         meals = (
-            db.query(Meal)
+            query
             .order_by(Meal.created_at.desc())
             .offset(skip)
             .limit(limit)

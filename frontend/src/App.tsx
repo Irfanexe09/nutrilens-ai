@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Navbar } from './components/Navbar';
+import { Navbar, ActiveTab } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ScanFood } from './components/ScanFood';
 import { AnalysisResult } from './components/AnalysisResult';
 import { FoodCatalog } from './components/FoodCatalog';
+import { Dashboard } from './components/Dashboard';
+import { Profile } from './components/Profile';
 import { Footer } from './components/Footer';
 import { api } from './services/api';
 import { HealthStatus, FoodItem, MealItem, FoodAnalysisResponse, DetectedFoodItem } from './types';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'home' | 'scan' | 'demo' | 'catalog'>('home');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [availableFoods, setAvailableFoods] = useState<FoodItem[]>([]);
   const [, setAnalysisResult] = useState<FoodAnalysisResponse | null>(null);
@@ -108,7 +110,6 @@ export const App: React.FC = () => {
 
     // Map confirmed food items to meal items
     const mealItems: MealItem[] = confirmedFoods.map((cf) => {
-      // Find matching food in database if available
       const matched = availableFoods.find(
         (af) =>
           af.name.toLowerCase().includes(cf.name.toLowerCase()) ||
@@ -142,7 +143,6 @@ export const App: React.FC = () => {
         };
       }
 
-      // If custom/unmatched item, provide baseline
       return {
         food_id: undefined,
         food_name: cf.name,
@@ -201,6 +201,17 @@ export const App: React.FC = () => {
             onDemoClick={handleLaunchDemo}
             onCatalogClick={() => setActiveTab('catalog')}
           />
+        )}
+
+        {activeTab === 'dashboard' && (
+          <Dashboard
+            onLogMealClick={() => setActiveTab('scan')}
+            onConfigureProfileClick={() => setActiveTab('profile')}
+          />
+        )}
+
+        {activeTab === 'profile' && (
+          <Profile onProfileUpdated={() => {}} />
         )}
 
         {activeTab === 'scan' && (

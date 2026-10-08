@@ -9,8 +9,9 @@ import {
   ChevronRight,
   Info,
   Loader2,
+  Target,
 } from 'lucide-react';
-import { MealItem, NutritionBreakdown, FoodItem, OptimizationGoal } from '../types';
+import { MealItem, NutritionBreakdown, FoodItem, OptimizationGoal, EvaluateMealResponse } from '../types';
 import { api } from '../services/api';
 
 interface AnalysisResultProps {
@@ -35,17 +36,30 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const [evaluation, setEvaluation] = useState<EvaluateMealResponse | null>(null);
 
   // Recalculate deterministic nutrition whenever meal items change
   const recalculateNutrition = async (currentItems: MealItem[]) => {
     if (currentItems.length === 0) {
       setNutrition(null);
+      setEvaluation(null);
       return;
     }
     setIsRecalculating(true);
     try {
       const result = await api.calculateNutrition(currentItems);
       setNutrition(result);
+
+      // Evaluate candidate meal against personalized daily budget if token exists
+      if (api.getToken()) {
+        api.evaluateMeal({
+          meal_calories: result.total_calories,
+          meal_protein: result.total_protein,
+          meal_carbs: result.total_carbohydrates,
+          meal_fat: result.total_fat,
+          meal_fiber: result.total_fiber,
+        }).then(evalRes => setEvaluation(evalRes)).catch(() => {});
+      }
     } catch (err) {
       console.error('Failed to calculate nutrition:', err);
     } finally {
@@ -560,6 +574,46 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
               </select>
             </div>
           </div>
+
+          {/* DAILY TARGET CONTRIBUTION EVALUATION */}
+          {evaluation && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <Target className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Daily Target Fit & Insights
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Evaluated against your personalized remaining daily budget.
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                    evaluation.fits_remaining_budget
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}
+                >
+                  {evaluation.fits_remaining_budget ? '✓ Fits Daily Budget' : 'Exceeds Daily Budget'}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {evaluation.insights.map((insight, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs text-slate-700">
+                    <ChevronRight className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>{insight}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* MEAL OPTIMIZER SECTION */}
           {optimizerData && (

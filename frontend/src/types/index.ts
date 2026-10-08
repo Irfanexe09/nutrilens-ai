@@ -164,3 +164,119 @@ export interface Meal {
 
 export type OptimizationGoal = 'weight_loss' | 'muscle_gain' | 'balanced';
 
+// Phase 4: Personalization & Daily Nutrition Target Types
+export type Sex = 'MALE' | 'FEMALE';
+
+export type ActivityLevel =
+  | 'SEDENTARY'
+  | 'LIGHTLY_ACTIVE'
+  | 'MODERATELY_ACTIVE'
+  | 'VERY_ACTIVE'
+  | 'EXTRA_ACTIVE';
+
+export type UserGoal =
+  | 'WEIGHT_LOSS'
+  | 'MAINTENANCE'
+  | 'WEIGHT_GAIN'
+  | 'MUSCLE_GAIN'
+  | 'GENERAL_HEALTH';
+
+export interface User {
+  id: string;
+  email: string;
+  name?: string;
+  created_at?: string;
+}
+
+export interface UserProfile {
+  id?: string;
+  user_id?: string;
+  name?: string;
+  age: number;
+  sex: Sex;
+  height_cm: number;
+  weight_kg: number;
+  activity_level: ActivityLevel;
+  goal: UserGoal;
+}
+
+export interface DailyNutritionTarget {
+  bmr: number;
+  tdee: number;
+  calorie_target: number;
+  protein_target_g: number;
+  carbohydrates_target_g: number;
+  fat_target_g: number;
+  fiber_target_g: number;
+  safety_warning?: string | null;
+  disclaimer: string;
+  is_active?: boolean;
+}
+
+export interface ProfileWithTarget {
+  profile: UserProfile;
+  targets: DailyNutritionTarget;
+}
+
+export interface DailyNutritionResponse {
+  date: string;
+  target: {
+    calorie_target: number;
+    protein_target_g: number;
+    carbohydrates_target_g: number;
+    fat_target_g: number;
+    fiber_target_g: number;
+    has_custom_target: boolean;
+    safety_warning?: string | null;
+    disclaimer: string;
+  };
+  consumed: {
+    calories: number;
+    protein_g: number;
+    carbohydrates_g: number;
+    fat_g: number;
+    fiber_g: number;
+  };
+  remaining: {
+    calories: number;
+    protein_g: number;
+    carbohydrates_g: number;
+    fat_g: number;
+    fiber_g: number;
+  };
+  overage: {
+    calories: number;
+    is_over_target: boolean;
+    status_message: string;
+  };
+  percentages: {
+    calories: number;
+    protein: number;
+    carbohydrates: number;
+    fat: number;
+    fiber: number;
+  };
+  meals: {
+    id: string;
+    meal_type: string;
+    image_url?: string;
+    created_at?: string;
+    calories: number;
+    protein: number;
+    carbohydrates: number;
+    fat: number;
+    fiber: number;
+    formatted_estimate: string;
+    item_count: number;
+  }[];
+  meal_count: number;
+}
+
+export interface EvaluateMealResponse {
+  meal_calories: number;
+  remaining_calories_before_meal: number;
+  remaining_calories_after_meal: number;
+  fits_remaining_budget: boolean;
+  insights: string[];
+}
+

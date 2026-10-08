@@ -1,7 +1,10 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.services.meal_service import MealService
+from app.models.user import User
+from app.core.security import get_current_user_optional
 from app.schemas.meal import (
     MealCreate,
     MealResponse,
@@ -14,11 +17,18 @@ router = APIRouter()
 
 
 @router.post("/meals", response_model=MealResponse, status_code=status.HTTP_201_CREATED, tags=["Meals"])
-def create_meal(meal_in: MealCreate, db: Session = Depends(get_db)):
+def create_meal(
+    meal_in: MealCreate,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
     """
     Save a confirmed meal with deterministically calculated nutritional totals
-    and honest uncertainty intervals.
+    and honest uncertainty intervals. Attaches authenticated user identity if logged in.
     """
+    if current_user:
+        meal_in.user_id = current_user.id
+
     service = MealService(db)
     meal = service.create_meal(meal_in)
     
@@ -30,8 +40,12 @@ def create_meal(meal_in: MealCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/meals/{meal_id}", response_model=MealResponse, tags=["Meals"])
-def get_meal(meal_id: str, db: Session = Depends(get_db)):
-    """Retrieve an analyzed or saved meal by its ID."""
+def get_meal(
+    meal_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Retrieve an analyzed or saved meal by its ID with user authorization check."""
     service = MealService(db)
     meal = service.get_meal(meal_id)
     if not meal:
@@ -39,6 +53,14 @@ def get_meal(meal_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Meal with ID '{meal_id}' not found",
         )
+
+    # User isolation: If meal has an owner and authenticated requester is not the owner, forbid access
+    if current_user and meal.user_id and meal.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this meal",
+        )
+
     formatted = f"Estimated: ~{int(round(meal.total_calories))} kcal (±{int(round(meal.uncertainty_calories))} kcal)"
     response_data = MealResponse.model_validate(meal)
     response_data.formatted_estimate = formatted
@@ -49,11 +71,13 @@ def get_meal(meal_id: str, db: Session = Depends(get_db)):
 def list_meals(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """List recorded meals with pagination."""
+    """List recorded meals with pagination, filtered by user if authenticated."""
     service = MealService(db)
-    meals, total = service.list_meals(skip=skip, limit=limit)
+    user_id = current_user.id if current_user else None
+    meals, total = service.list_meals(skip=skip, limit=limit, user_id=user_id)
     
     enriched_meals = []
     for m in meals:

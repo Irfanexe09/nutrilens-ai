@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api"
     DEBUG: bool = False
 
+    # Authentication & Security
+    JWT_SECRET_KEY: str = "nutrilens-secret-key-super-secure-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
     # Database
     # Defaults to SQLite for immediate local zero-config runs, fully supports PostgreSQL
     DATABASE_URL: str = "sqlite:///./nutrilens.db"

@@ -9,7 +9,14 @@ import logging
 from app.core.config import settings
 from app.database.session import engine, SessionLocal
 from app.database.base import Base
-from app.models import FoodItem, Meal, MealItem  # Ensure all models are registered
+from app.models import (
+    FoodItem,
+    Meal,
+    MealItem,
+    User,
+    UserProfile,
+    DailyNutritionTarget,
+)  # Ensure all models are registered
 from app.services.food_service import FoodService
 from app.api.v1.api import api_router
 

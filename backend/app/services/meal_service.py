@@ -101,6 +101,6 @@ class MealService:
         return self.meal_repo.get_by_id(self.db, meal_id)
 
     def list_meals(
-        self, skip: int = 0, limit: int = 20
+        self, skip: int = 0, limit: int = 20, user_id: Optional[str] = None
     ) -> Tuple[List[Meal], int]:
-        return self.meal_repo.list_meals(self.db, skip=skip, limit=limit)
+        return self.meal_repo.list_meals(self.db, skip=skip, limit=limit, user_id=user_id)

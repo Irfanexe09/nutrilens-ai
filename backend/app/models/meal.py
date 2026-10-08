@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Float, DateTime, Text
+from sqlalchemy import Column, String, Float, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 
@@ -9,7 +9,7 @@ class Meal(Base):
     __tablename__ = "meals"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(64), nullable=True, index=True)  # Cleanly nullable for Phase 1
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     image_url = Column(String(500), nullable=True)
     image_filename = Column(String(255), nullable=True)
     
@@ -34,4 +34,6 @@ class Meal(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
+    user = relationship("User", back_populates="meals")
     items = relationship("MealItem", back_populates="meal", cascade="all, delete-orphan", lazy="joined")
+
