@@ -23,7 +23,10 @@ class Meal(Base):
     total_carbohydrates = Column(Float, default=0.0, nullable=False)
     total_fat = Column(Float, default=0.0, nullable=False)
     total_fiber = Column(Float, default=0.0, nullable=False)
+    total_sugar = Column(Float, default=0.0, nullable=False)
+    total_sodium = Column(Float, default=0.0, nullable=False)
     uncertainty_calories = Column(Float, default=0.0, nullable=False)  # e.g., ±45 kcal
+    confidence_level = Column(String(32), default="MEDIUM", nullable=False)
     
     notes = Column(Text, nullable=True)
     

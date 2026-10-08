@@ -159,4 +159,42 @@ class AIProvider(ABC):
         ...
 ```
 
-In Phase 1, `PlaceholderAIProvider` fulfills this contract by returning structured status schemas without fabricating synthetic values. In Phase 2, providers such as `GeminiVisionAIProvider`, `YOLOv8FoodDetector`, or fine-tuned Hugging Face models can be plugged in by updating `AI_PROVIDER` in `.env` without modifying a single route or database model.
+In Phase 1, `PlaceholderAIProvider` fulfilled this contract. In Phase 2, `GeminiVisionAIProvider` implemented multimodal zero-shot visual detection and portion volume approximation with explicit visual uncertainty reporting.
+
+---
+
+## 5. Phase 3: Nutrition Intelligence Engine
+
+### 5.1 Decoupling Principle
+The LLM is strictly prohibited from computing nutrition values or inventing calorie numbers. Instead:
+- Multimodal AI outputs: Dish Identification (`name`), Volume Approximation (`portion_value`, `portion_unit`), Confidence (`confidence`), and Visual Uncertainties.
+- User reviews and audits the food items and portion estimates.
+- `NutritionCalculationService` queries the verified reference database via `NutritionDataProvider` and programmatically calculates macros per normalized gram weight.
+
+### 5.2 Decoupled Data Provider (`NutritionDataProvider`)
+```python
+class NutritionDataProvider(ABC):
+    @abstractmethod
+    def get_food_by_id(self, food_id: int) -> Optional[FoodItem]: ...
+
+    @abstractmethod
+    def get_food_by_name(self, name: str) -> Optional[FoodItem]: ...
+
+    @abstractmethod
+    def search_foods(self, query: Optional[str], category: Optional[str], is_indian: Optional[bool], skip: int, limit: int) -> List[FoodItem]: ...
+```
+This abstraction permits swapping `DatabaseNutritionProvider` with external APIs (USDA FoodData Central API, ICMR-NIN IFCT API, Open Food Facts) without altering arithmetic or validation layers.
+
+### 5.3 Portion Conversion Matrix (`PortionConverter`)
+Incoming units are normalized deterministically to grams:
+- **Grams (`g`)**: Identity conversion ($W_g = \text{value}$).
+- **Milliliters (`ml`)**: Density-adjusted conversion ($W_g = \text{value} \times \rho_{\text{food}}$). Liquids without specific density use $\rho = 1.0\text{ g/ml}$; dairy/curd uses $\rho = 1.04\text{ g/ml}$.
+- **Pieces (`piece`)**: Multiplied by verified unit piece weight ($W_g = \text{count} \times W_{\text{piece}}$). E.g. Chapati: 40g, Idli: 40g, Medu Vada: 45g, Boiled Egg: 50g.
+- **Servings (`serving` / `plate` / `bowl`)**: Multiplied by standard serving size ($W_g = \text{servings} \times \text{serving\_size}$).
+- **Incompatible/Unsupported Units**: Cleanly rejected with HTTP 400 Bad Request. Zero or negative portions are rejected.
+
+### 5.4 Confidence Scoring Matrix
+- **HIGH Confidence**: Gram weight was explicitly confirmed by weight on a scale (`is_exact_weight=True`) with direct database reference match. Margin reflects recipe variance only ($\pm 5\text{--}10\%$).
+- **MEDIUM Confidence**: Portions are visually estimated from photography. Quadratic composition of recipe variance and visual volume uncertainty ($\pm 10\text{--}15\%$).
+- **LOW Confidence**: High visual occlusion, ambiguous dish boundaries, or approximated reference item.
+

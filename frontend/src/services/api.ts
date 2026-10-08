@@ -76,12 +76,31 @@ export const api = {
   },
 
   async calculateNutrition(items: MealItem[]): Promise<NutritionBreakdown> {
-    const res = await fetch(`${API_BASE}/meals/calculate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    });
-    return handleResponse<NutritionBreakdown>(res);
+    const formattedItems = items.map((i) => ({
+      food_id: i.food_id,
+      food_name: i.food_name,
+      portion_value: Number(i.portion_value ?? (i.serving_size * i.serving_count)) || 100,
+      portion_unit: i.portion_unit || i.serving_unit || 'g',
+      is_exact_weight: i.confidence_level === 'HIGH',
+      confidence_score: i.confidence_score,
+    }));
+
+    try {
+      const res = await fetch(`${API_BASE}/nutrition/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: formattedItems }),
+      });
+      return await handleResponse<NutritionBreakdown>(res);
+    } catch {
+      // Fallback to legacy calculation endpoint
+      const res = await fetch(`${API_BASE}/meals/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      return await handleResponse<NutritionBreakdown>(res);
+    }
   },
 
   async saveMeal(meal: {

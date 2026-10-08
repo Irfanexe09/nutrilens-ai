@@ -34,8 +34,8 @@ class FoodService:
     def create_food(self, food_in: FoodItemCreate) -> FoodItem:
         return self.repo.create(self.db, food_in)
 
-    def seed_database(self) -> int:
-        """Finds seed file and populates initial items if empty."""
+    def seed_database(self, force_refresh: bool = False) -> int:
+        """Finds seed file and populates initial items if empty or updates fields."""
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         seed_path = os.path.join(base_dir, "data", "nutrition", "indian_foods_seed.json")
-        return self.repo.seed_initial_foods(self.db, seed_path)
+        return self.repo.seed_initial_foods(self.db, seed_path, force_refresh=force_refresh)

@@ -446,11 +446,11 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
               </form>
             )}
 
-            {/* MANDATORY NOTICE: Nutrition calculation will be available after confirmation */}
+            {/* Transition to nutrition intelligence engine */}
             <div className="flex items-center gap-2 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
-              <Info className="w-4 h-4 text-slate-500 shrink-0" />
+              <Info className="w-4 h-4 text-emerald-600 shrink-0" />
               <span className="font-medium text-slate-700">
-                Nutrition calculation will be available after confirmation.
+                Confirm foods and portions to calculate deterministic nutrition breakdown.
               </span>
             </div>
 
@@ -463,7 +463,7 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                 className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm transition-all disabled:opacity-50"
               >
                 <Check className="w-4 h-4" />
-                Confirm Foods ({foods.length} item{foods.length === 1 ? '' : 's'})
+                Confirm Foods & Calculate Nutrition ({foods.length} item{foods.length === 1 ? '' : 's'})
               </button>
             </div>
           </div>
@@ -476,7 +476,7 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                 <span>Foods Confirmed Successfully</span>
               </div>
               <p className="text-emerald-800 leading-relaxed">
-                The food items and audited portions have been locked. In Phase 3, this confirmed data passes directly to the deterministic nutrition database calculation engine.
+                Passing confirmed food items and portions directly to the deterministic nutrition intelligence engine...
               </p>
             </div>
           )}

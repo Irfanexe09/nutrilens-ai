@@ -9,11 +9,14 @@ class MealItemBase(BaseModel):
     serving_count: float = Field(1.0, gt=0)
     serving_size: float = Field(..., gt=0)
     serving_unit: str = Field(..., max_length=30)
+    gram_weight: Optional[float] = Field(None, ge=0)
     calories: float = Field(..., ge=0)
     protein: float = Field(..., ge=0)
     carbohydrates: float = Field(..., ge=0)
     fat: float = Field(..., ge=0)
     fiber: float = Field(0.0, ge=0)
+    sugar: float = Field(0.0, ge=0)
+    sodium: float = Field(0.0, ge=0)
     confidence_score: Optional[float] = Field(None, ge=0, le=1.0)
     uncertainty_pct: float = Field(10.0, ge=0, le=100)
 
@@ -47,9 +50,13 @@ class NutritionBreakdownResponse(BaseModel):
     total_carbohydrates: float
     total_fat: float
     total_fiber: float
+    total_sugar: float = 0.0
+    total_sodium: float = 0.0
     calorie_min: float
     calorie_max: float
     uncertainty_calories: float
+    confidence_level: str = "MEDIUM"
+    uncertainty_explanation: Optional[str] = None
     formatted_estimate: str
     macro_distribution: Dict[str, float]
 
@@ -62,7 +69,10 @@ class MealResponse(MealBase):
     total_carbohydrates: float
     total_fat: float
     total_fiber: float
+    total_sugar: float = 0.0
+    total_sodium: float = 0.0
     uncertainty_calories: float
+    confidence_level: Optional[str] = "MEDIUM"
     formatted_estimate: Optional[str] = None
     items: List[MealItemResponse] = []
     created_at: Optional[datetime] = None

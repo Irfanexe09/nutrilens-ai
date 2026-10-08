@@ -15,6 +15,7 @@ class MealItem(Base):
     serving_count = Column(Float, default=1.0, nullable=False)
     serving_size = Column(Float, nullable=False)
     serving_unit = Column(String(30), nullable=False)
+    gram_weight = Column(Float, nullable=True)  # Normalized weight in grams
     
     # Calculated deterministic values for this portion
     calories = Column(Float, nullable=False)
@@ -22,6 +23,8 @@ class MealItem(Base):
     carbohydrates = Column(Float, nullable=False)
     fat = Column(Float, nullable=False)
     fiber = Column(Float, nullable=False, default=0.0)
+    sugar = Column(Float, nullable=False, default=0.0)
+    sodium = Column(Float, nullable=False, default=0.0)
     
     # Uncertainty and detection confidence
     confidence_score = Column(Float, nullable=True)  # Detection confidence (e.g. 0.94)

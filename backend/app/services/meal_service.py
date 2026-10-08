@@ -32,6 +32,8 @@ class MealService:
             base_carb = item.carbohydrates
             base_fat = item.fat
             base_fib = item.fiber
+            base_sug = getattr(item, "sugar", 0.0)
+            base_sod = getattr(item, "sodium", 0.0)
             uncert = item.uncertainty_pct
 
             if item.food_id:
@@ -42,6 +44,8 @@ class MealService:
                     base_carb = db_food.carbohydrates
                     base_fat = db_food.fat
                     base_fib = db_food.fiber
+                    base_sug = db_food.sugar
+                    base_sod = db_food.sodium
                     uncert = db_food.uncertainty_pct
 
             inputs.append(
@@ -55,6 +59,8 @@ class MealService:
                     base_carbohydrates=base_carb,
                     base_fat=base_fat,
                     base_fiber=base_fib,
+                    base_sugar=base_sug,
+                    base_sodium=base_sod,
                     uncertainty_pct=uncert,
                 )
             )
@@ -71,9 +77,13 @@ class MealService:
             total_carbohydrates=summary.total_carbohydrates,
             total_fat=summary.total_fat,
             total_fiber=summary.total_fiber,
+            total_sugar=getattr(summary, "total_sugar", 0.0),
+            total_sodium=getattr(summary, "total_sodium", 0.0),
             calorie_min=summary.calorie_min,
             calorie_max=summary.calorie_max,
             uncertainty_calories=summary.uncertainty_calories,
+            confidence_level=getattr(summary, "confidence_level", "MEDIUM"),
+            uncertainty_explanation=getattr(summary, "uncertainty_explanation", None),
             formatted_estimate=summary.formatted_estimate,
             macro_distribution=summary.macro_distribution,
         )

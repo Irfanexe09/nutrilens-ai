@@ -31,6 +31,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   const [items, setItems] = useState<MealItem[]>(initialItems);
   const [nutrition, setNutrition] = useState<NutritionBreakdown | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<OptimizationGoal>('weight_loss');
+  const [selectedMealType, setSelectedMealType] = useState<string>('lunch');
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
@@ -59,7 +60,13 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   const handleServingChange = (index: number, newCount: number) => {
     const updated = [...items];
     const clamped = Math.max(0.25, Math.min(5.0, Number(newCount.toFixed(2))));
-    updated[index] = { ...updated[index], serving_count: clamped };
+    const prevServingSize = updated[index].serving_size || 100;
+    updated[index] = {
+      ...updated[index],
+      serving_count: clamped,
+      portion_value: Math.round(prevServingSize * clamped),
+      gram_weight: Math.round(prevServingSize * clamped),
+    };
     setItems(updated);
     recalculateNutrition(updated);
   };
@@ -77,11 +84,17 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       serving_count: 1.0,
       serving_size: food.serving_size,
       serving_unit: food.serving_unit,
+      portion_value: food.serving_size,
+      portion_unit: food.serving_unit,
+      gram_weight: food.serving_size,
       calories: food.calories,
       protein: food.protein,
       carbohydrates: food.carbohydrates,
       fat: food.fat,
       fiber: food.fiber,
+      sugar: food.sugar,
+      sodium: food.sodium,
+      confidence_level: 'HIGH',
       uncertainty_pct: food.uncertainty_pct,
     };
     const updated = [...items, newItem];
@@ -93,13 +106,13 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     if (items.length === 0) return;
     try {
       await api.saveMeal({
-        meal_type: 'lunch',
-        notes: isDemo ? 'Saved from verified interactive demo' : 'Scanned meal analysis',
+        meal_type: selectedMealType,
+        notes: isDemo ? 'Saved from verified interactive demo' : `Scanned meal logged as ${selectedMealType}`,
         image_url: previewImageUrl,
         items,
       });
       setIsSaved(true);
-      setSaveSuccessMessage('Meal successfully recorded to PostgreSQL database!');
+      setSaveSuccessMessage(`Meal successfully recorded as ${selectedMealType}!`);
       setTimeout(() => setSaveSuccessMessage(null), 4000);
     } catch (err) {
       console.error('Save failed:', err);
@@ -203,7 +216,17 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedMealType}
+            onChange={(e) => setSelectedMealType(e.target.value)}
+            className="px-3 py-2 rounded-xl text-slate-700 bg-white border border-slate-300 text-xs font-semibold focus:outline-emerald-500 shadow-2xs"
+          >
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snack</option>
+          </select>
           <button
             onClick={onScanAnother}
             className="px-4 py-2 rounded-xl text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 text-xs font-semibold transition-colors"
@@ -275,6 +298,29 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
               </div>
             </div>
 
+            {/* Confidence Badge & Uncertainty Explanation */}
+            {nutrition && (
+              <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${
+                      nutrition.confidence_level === 'HIGH'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : nutrition.confidence_level === 'LOW'
+                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    {nutrition.confidence_level || 'MEDIUM'} Confidence
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {nutrition.uncertainty_explanation ||
+                    'Portions are visually estimated (±10–15% variance). Weighed gram input provides exact High confidence.'}
+                </p>
+              </div>
+            )}
+
             {/* Macro Distribution Bar */}
             {nutrition && (
               <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -316,17 +362,17 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             )}
           </div>
 
-          {/* Phase 2 Multimodal AI Status Notice Card */}
-          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 space-y-2 text-xs text-slate-600">
-            <div className="flex items-center gap-2 text-slate-900 font-semibold">
-              <Info className="w-4 h-4 text-emerald-600" />
-              <span>AI Vision Roadmap (Phase 2)</span>
+          {/* Phase 3 Nutrition Intelligence Status Card */}
+          <div className="rounded-2xl bg-emerald-50/50 border border-emerald-200 p-5 space-y-2 text-xs text-slate-700">
+            <div className="flex items-center gap-2 text-emerald-950 font-bold">
+              <CheckCircle className="w-4 h-4 text-emerald-600" />
+              <span>Phase 3: Nutrition Engine Active</span>
             </div>
-            <p className="leading-relaxed">
-              Automated bounding-box detection and zero-shot multimodal food identification will be activated in Phase 2.
+            <p className="leading-relaxed text-slate-600">
+              Macronutrients and caloric totals are calculated programmatically from verified reference databases (ICMR-NIN IFCT 2017 & USDA FoodData Central).
             </p>
-            <p className="text-slate-500 font-medium">
-              In Phase 1, the deterministic nutrition engine, portion scaler, and database schema are 100% active.
+            <p className="text-[11px] text-emerald-800 font-medium">
+              Zero LLM arithmetic. Calculations are 100% deterministic and reproducible.
             </p>
           </div>
         </div>
@@ -376,6 +422,33 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             </div>
           </div>
 
+          {/* Secondary Nutritional Metrics: Sugar & Sodium */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                  Total Sugar
+                </span>
+                <span className="text-sm font-bold text-slate-800">
+                  {nutrition ? (nutrition.total_sugar ?? 0) : 0} <span className="text-[11px] font-normal text-slate-500">g</span>
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400">Natural & added</span>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                  Sodium
+                </span>
+                <span className="text-sm font-bold text-slate-800">
+                  {nutrition ? Math.round(nutrition.total_sodium ?? 0) : 0} <span className="text-[11px] font-normal text-slate-500">mg</span>
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400">Electrolytes</span>
+            </div>
+          </div>
+
           {/* Confirmed Food Items Table with Portion Adjuster */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
@@ -401,7 +474,12 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 {items.map((item: MealItem, idx: number) => (
                   <div key={idx} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="space-y-0.5">
-                      <div className="text-sm font-semibold text-slate-900">{item.food_name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{item.food_name}</span>
+                        <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100">
+                          ~{item.gram_weight ? Math.round(item.gram_weight) : Math.round(item.serving_size * item.serving_count)}g
+                        </span>
+                      </div>
                       <div className="text-xs text-slate-500">
                         Base: {item.serving_size} {item.serving_unit} • {item.calories} kcal (P: {item.protein}g, C: {item.carbohydrates}g, F: {item.fat}g)
                       </div>

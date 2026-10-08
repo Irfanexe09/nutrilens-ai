@@ -14,6 +14,9 @@ export interface FoodItem {
   category: string;
   serving_size: number;
   serving_unit: string;
+  piece_weight_g?: number | null;
+  density_g_per_ml?: number | null;
+  allowed_units?: string;
   calories: number;
   protein: number;
   carbohydrates: number;
@@ -24,6 +27,7 @@ export interface FoodItem {
   is_indian_dish: boolean;
   uncertainty_pct: number;
   description?: string;
+  data_source?: string;
 }
 
 export interface EstimatedPortion {
@@ -75,13 +79,44 @@ export interface MealItem {
   serving_count: number;
   serving_size: number;
   serving_unit: string;
+  gram_weight?: number;
+  portion_value?: number;
+  portion_unit?: string;
   calories: number;
   protein: number;
   carbohydrates: number;
   fat: number;
   fiber: number;
+  sugar?: number;
+  sodium?: number;
   confidence_score?: number | null;
+  confidence_level?: string;
   uncertainty_pct: number;
+  conversion_notes?: string;
+}
+
+export interface ItemNutritionCalculationResult {
+  food_id?: number;
+  food_name: string;
+  category: string;
+  portion_value: number;
+  portion_unit: string;
+  gram_weight: number;
+  scaling_factor: number;
+  calories: number;
+  protein: number;
+  carbohydrates: number;
+  fat: number;
+  fiber: number;
+  sugar: number;
+  sodium: number;
+  calorie_min: number;
+  calorie_max: number;
+  uncertainty_calories: number;
+  uncertainty_pct: number;
+  confidence_level: 'HIGH' | 'MEDIUM' | 'LOW';
+  data_source: string;
+  conversion_notes: string;
 }
 
 export interface NutritionBreakdown {
@@ -90,15 +125,20 @@ export interface NutritionBreakdown {
   total_carbohydrates: number;
   total_fat: number;
   total_fiber: number;
+  total_sugar?: number;
+  total_sodium?: number;
   calorie_min: number;
   calorie_max: number;
   uncertainty_calories: number;
+  confidence_level?: 'HIGH' | 'MEDIUM' | 'LOW';
+  uncertainty_explanation?: string;
   formatted_estimate: string;
   macro_distribution: {
     protein_pct: number;
     carbohydrates_pct: number;
     fat_pct: number;
   };
+  items?: ItemNutritionCalculationResult[];
 }
 
 export interface Meal {
@@ -112,7 +152,10 @@ export interface Meal {
   total_carbohydrates: number;
   total_fat: number;
   total_fiber: number;
+  total_sugar?: number;
+  total_sodium?: number;
   uncertainty_calories: number;
+  confidence_level?: string;
   formatted_estimate?: string;
   notes?: string;
   items: MealItem[];
@@ -120,3 +163,4 @@ export interface Meal {
 }
 
 export type OptimizationGoal = 'weight_loss' | 'muscle_gain' | 'balanced';
+

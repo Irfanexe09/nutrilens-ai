@@ -24,6 +24,8 @@ class ItemNutritionalInput:
     base_carbohydrates: float
     base_fat: float
     base_fiber: float = 0.0
+    base_sugar: float = 0.0
+    base_sodium: float = 0.0
     uncertainty_pct: float = 10.0  # Recipe/portion variance percentage
 
 
@@ -38,10 +40,12 @@ class ItemNutritionalOutput:
     carbohydrates: float
     fat: float
     fiber: float
-    calorie_min: float
-    calorie_max: float
-    uncertainty_calories: float
-    uncertainty_pct: float
+    sugar: float = 0.0
+    sodium: float = 0.0
+    calorie_min: float = 0.0
+    calorie_max: float = 0.0
+    uncertainty_calories: float = 0.0
+    uncertainty_pct: float = 10.0
 
 
 @dataclass
@@ -57,6 +61,10 @@ class MealNutritionSummary:
     formatted_estimate: str
     macro_distribution: Dict[str, float]  # Percentage of calories from protein, carbs, fat
     items: List[ItemNutritionalOutput]
+    total_sugar: float = 0.0
+    total_sodium: float = 0.0
+    confidence_level: str = "MEDIUM"
+    uncertainty_explanation: str = "Portion estimate derived from visible serving volume."
 
 
 class NutritionEngine:
@@ -74,6 +82,8 @@ class NutritionEngine:
         carbs = round(item.base_carbohydrates * count, 1)
         fat = round(item.base_fat * count, 1)
         fiber = round(item.base_fiber * count, 1)
+        sugar = round((item.base_sugar or 0.0) * count, 1)
+        sodium = round((item.base_sodium or 0.0) * count, 1)
         
         # Uncertainty delta calculation
         variance_ratio = (item.uncertainty_pct or 10.0) / 100.0
@@ -91,6 +101,8 @@ class NutritionEngine:
             carbohydrates=carbs,
             fat=fat,
             fiber=fiber,
+            sugar=sugar,
+            sodium=sodium,
             calorie_min=calorie_min,
             calorie_max=calorie_max,
             uncertainty_calories=delta,
@@ -112,6 +124,8 @@ class NutritionEngine:
         total_carbs = round(sum(i.carbohydrates for i in calculated_items), 1)
         total_fat = round(sum(i.fat for i in calculated_items), 1)
         total_fiber = round(sum(i.fiber for i in calculated_items), 1)
+        total_sugar = round(sum(i.sugar for i in calculated_items), 1)
+        total_sodium = round(sum(i.sodium for i in calculated_items), 1)
 
         # Statistical root-sum-square or linear composite uncertainty
         # For food portions, quadratic sum of variances accounts for independent errors:
@@ -151,6 +165,8 @@ class NutritionEngine:
             total_carbohydrates=total_carbs,
             total_fat=total_fat,
             total_fiber=total_fiber,
+            total_sugar=total_sugar,
+            total_sodium=total_sodium,
             calorie_min=calorie_min,
             calorie_max=calorie_max,
             uncertainty_calories=composite_delta,

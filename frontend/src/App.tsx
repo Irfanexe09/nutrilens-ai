@@ -123,6 +123,9 @@ export const App: React.FC = () => {
         return {
           food_id: matched.id,
           food_name: cf.name,
+          portion_value: cf.estimated_portion.value,
+          portion_unit: cf.estimated_portion.unit,
+          gram_weight: cf.estimated_portion.value,
           serving_count: Number(ratio.toFixed(2)) || 1.0,
           serving_size: matched.serving_size,
           serving_unit: matched.serving_unit,
@@ -131,7 +134,10 @@ export const App: React.FC = () => {
           carbohydrates: matched.carbohydrates,
           fat: matched.fat,
           fiber: matched.fiber,
+          sugar: matched.sugar,
+          sodium: matched.sodium,
           confidence_score: cf.confidence,
+          confidence_level: cf.confidence >= 0.85 ? 'HIGH' : 'MEDIUM',
           uncertainty_pct: matched.uncertainty_pct,
         };
       }
@@ -140,6 +146,9 @@ export const App: React.FC = () => {
       return {
         food_id: undefined,
         food_name: cf.name,
+        portion_value: cf.estimated_portion.value,
+        portion_unit: cf.estimated_portion.unit,
+        gram_weight: cf.estimated_portion.value,
         serving_count: 1.0,
         serving_size: cf.estimated_portion.value,
         serving_unit: cf.estimated_portion.unit,
@@ -148,7 +157,10 @@ export const App: React.FC = () => {
         carbohydrates: 20.0,
         fat: 5.0,
         fiber: 2.0,
+        sugar: 1.0,
+        sodium: 200.0,
         confidence_score: cf.confidence,
+        confidence_level: 'LOW',
         uncertainty_pct: 12.0,
       };
     });
