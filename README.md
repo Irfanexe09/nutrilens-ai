@@ -9,7 +9,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-17%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-30%20Passed-brightgreen.svg)]()
 
 ---
 
@@ -255,7 +255,7 @@ tests/test_nutrition_engine.py::test_determinism_across_multiple_runs PASSED [10
 
 ## 🗺️ Roadmap & Phase Progression
 
-- [x] **Phase 1: Foundation (Current)**
+- [x] **Phase 1: Foundation (Completed)**
   - Decoupled full-stack monorepo architecture
   - Deterministic Nutrition Calculation Engine with Atwater verification
   - Root-sum-square portion uncertainty modeling ($\pm 10\text{--}15\%$)
@@ -265,14 +265,18 @@ tests/test_nutrition_engine.py::test_determinism_across_multiple_runs PASSED [10
   - "Optimize My Meal" scenario projection preview
   - Docker Compose orchestration & PostgreSQL Alembic migrations
   - 17 automated tests passing
-- [ ] **Phase 2: Multimodal AI Vision Integration**
-  - Implement `GeminiVisionAIProvider` using Gemini Flash Multimodal
-  - Zero-shot food segmentation and candidate bounding boxes
-  - Visual portion density calibration using plate reference heuristics
-- [ ] **Phase 3: Computer Vision & Edge Models**
-  - YOLOv8 custom food detection models
-  - On-device inference options
-- [ ] **Phase 4: Personalization & Auth**
+- [x] **Phase 2: Real AI Food Analysis (Current)**
+  - Extended `AIProvider` abstraction with `GeminiVisionAIProvider` (Google Gemini Multimodal Vision)
+  - Dedicated system prompt engineering tailored for visual recognition and regional Indian cuisine
+  - Conservative portion estimation (no false precision)
+  - Detection of visual uncertainties (hidden oils, gravies, seasonings)
+  - Reusable `FoodConfirmation` review interface with edit, remove, and add capabilities
+  - Complete separation: AI identifies food & portions; nutrition calculation deferred to Phase 3
+  - 30 automated unit, integration, and E2E tests passing
+- [ ] **Phase 3: Deterministic Nutrition Integration**
+  - Connect confirmed food items and portions directly to the nutrition database
+  - Dynamic portion recalculation and macro aggregation
+- [ ] **Phase 4: Personalization, History & Auth**
   - JWT user authentication
   - Daily/weekly historical macronutrient analytics
   - Longitudinal diet trend tracking

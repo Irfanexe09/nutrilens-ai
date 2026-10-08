@@ -15,11 +15,12 @@ async def analyze_food_image(
     image: UploadFile = File(..., description="Uploaded food photograph (JPEG, PNG, or WEBP, max 10MB)"),
 ):
     """
-    Accept a food image for nutritional analysis.
+    Accept a food image for multimodal AI vision analysis.
     
-    Phase 1 Note:
-    Validates uploaded image and returns the structured analysis pipeline schema.
-    Clearly marks AI vision detection as scheduled for Phase 2, strictly avoiding
-    synthetic or fabricated calorie values.
+    Identifies visible food items, estimates conservative portion sizes, generates
+    confidence scores, and documents visual uncertainties.
+    
+    Note: The AI strictly avoids calculating or hallucinating calorie/macro values.
+    Nutrition calculation is deferred to the subsequent confirmation step.
     """
     return await AnalysisService.process_food_image(image)

@@ -26,6 +26,49 @@ export interface FoodItem {
   description?: string;
 }
 
+export interface EstimatedPortion {
+  value: number;
+  unit: string;
+  display_text?: string;
+}
+
+export interface DetectedFoodItem {
+  id?: string;
+  name: string;
+  estimated_portion: EstimatedPortion;
+  confidence: number;
+  description?: string;
+  ingredients?: string[];
+  uncertainties?: string[];
+  matched_food_id?: number;
+}
+
+export interface FoodAnalysisData {
+  foods: DetectedFoodItem[];
+  overall_confidence: number;
+  uncertainties: string[];
+}
+
+export interface FoodAnalysisResponse {
+  meal_id: string;
+  status: 'success' | 'pending' | 'error';
+  analysis: FoodAnalysisData;
+  foods?: DetectedFoodItem[];
+  overall_confidence?: number;
+  uncertainties?: string[];
+  notice: string;
+  image_metadata?: {
+    original_filename?: string;
+    stored_filename?: string;
+    size_bytes?: number;
+    dimensions?: string;
+    content_type?: string;
+    relative_url?: string;
+  };
+  provider?: string;
+  duration_ms?: number;
+}
+
 export interface MealItem {
   food_id?: number;
   food_name: string;
@@ -55,30 +98,6 @@ export interface NutritionBreakdown {
     protein_pct: number;
     carbohydrates_pct: number;
     fat_pct: number;
-  };
-}
-
-export interface FoodAnalysisResponse {
-  meal_id: string;
-  status: 'pending' | 'completed' | 'placeholder';
-  foods: Array<{
-    name: string;
-    confidence: number;
-    matched_food_id?: number;
-    suggested_serving_size?: number;
-    suggested_serving_unit?: number;
-  }>;
-  nutrition: NutritionBreakdown | null;
-  confidence: number | null;
-  recommendations: string[];
-  notice: string;
-  image_metadata?: {
-    original_filename?: string;
-    stored_filename?: string;
-    size_bytes?: number;
-    dimensions?: string;
-    content_type?: string;
-    relative_url?: string;
   };
 }
 

@@ -18,7 +18,10 @@ from app.schemas.meal import (
 )
 from app.schemas.analyze import (
     FoodAnalysisResponse,
+    FoodAnalysisData,
+    DetectedFoodSchema,
     DetectedFoodItemSchema,
+    EstimatedPortionSchema,
 )
 
 __all__ = [
@@ -37,5 +40,8 @@ __all__ = [
     "NutritionBreakdownResponse",
     "CalculateMealRequest",
     "FoodAnalysisResponse",
+    "FoodAnalysisData",
+    "DetectedFoodSchema",
     "DetectedFoodItemSchema",
+    "EstimatedPortionSchema",
 ]

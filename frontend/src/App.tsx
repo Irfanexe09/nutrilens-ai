@@ -6,7 +6,7 @@ import { AnalysisResult } from './components/AnalysisResult';
 import { FoodCatalog } from './components/FoodCatalog';
 import { Footer } from './components/Footer';
 import { api } from './services/api';
-import { HealthStatus, FoodItem, MealItem, FoodAnalysisResponse } from './types';
+import { HealthStatus, FoodItem, MealItem, FoodAnalysisResponse, DetectedFoodItem } from './types';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'scan' | 'demo' | 'catalog'>('home');
@@ -99,48 +99,62 @@ export const App: React.FC = () => {
   const handleAnalysisCompleted = (
     result: FoodAnalysisResponse,
     previewUrl: string,
-    file: File
+    _file: File,
+    confirmedFoods: DetectedFoodItem[]
   ) => {
     setAnalysisResult(result);
     setPreviewImageUrl(previewUrl);
     setIsDemoMode(false);
 
-    // If candidate dish matches by name from filename, auto-suggest it, else give standard starting selection
-    const filename = file.name.toLowerCase();
-    let initialItem: FoodItem | undefined;
+    // Map confirmed food items to meal items
+    const mealItems: MealItem[] = confirmedFoods.map((cf) => {
+      // Find matching food in database if available
+      const matched = availableFoods.find(
+        (af) =>
+          af.name.toLowerCase().includes(cf.name.toLowerCase()) ||
+          cf.name.toLowerCase().includes(af.name.toLowerCase())
+      );
 
-    if (filename.includes('dosa')) {
-      initialItem = availableFoods.find((f) => f.name.includes('Dosa'));
-    } else if (filename.includes('biryani')) {
-      initialItem = availableFoods.find((f) => f.name.includes('Biryani'));
-    } else if (filename.includes('roti') || filename.includes('chapati')) {
-      initialItem = availableFoods.find((f) => f.name.includes('Chapati'));
-    } else {
-      // Pick first seeded item or fallback
-      initialItem = availableFoods[0];
-    }
+      if (matched) {
+        const ratio =
+          matched.serving_size > 0
+            ? cf.estimated_portion.value / matched.serving_size
+            : 1.0;
+        return {
+          food_id: matched.id,
+          food_name: cf.name,
+          serving_count: Number(ratio.toFixed(2)) || 1.0,
+          serving_size: matched.serving_size,
+          serving_unit: matched.serving_unit,
+          calories: matched.calories,
+          protein: matched.protein,
+          carbohydrates: matched.carbohydrates,
+          fat: matched.fat,
+          fiber: matched.fiber,
+          confidence_score: cf.confidence,
+          uncertainty_pct: matched.uncertainty_pct,
+        };
+      }
 
-    if (initialItem) {
-      setActiveMealItems([
-        {
-          food_id: initialItem.id,
-          food_name: initialItem.name,
-          serving_count: 1.0,
-          serving_size: initialItem.serving_size,
-          serving_unit: initialItem.serving_unit,
-          calories: initialItem.calories,
-          protein: initialItem.protein,
-          carbohydrates: initialItem.carbohydrates,
-          fat: initialItem.fat,
-          fiber: initialItem.fiber,
-          uncertainty_pct: initialItem.uncertainty_pct,
-        },
-      ]);
-    } else {
-      setActiveMealItems([]);
-    }
+      // If custom/unmatched item, provide baseline
+      return {
+        food_id: undefined,
+        food_name: cf.name,
+        serving_count: 1.0,
+        serving_size: cf.estimated_portion.value,
+        serving_unit: cf.estimated_portion.unit,
+        calories: 150.0,
+        protein: 5.0,
+        carbohydrates: 20.0,
+        fat: 5.0,
+        fiber: 2.0,
+        confidence_score: cf.confidence,
+        uncertainty_pct: 12.0,
+      };
+    });
 
-    setActiveTab('demo'); // Switch to results view
+    setActiveMealItems(mealItems);
+    setActiveTab('demo');
   };
 
   const handleSelectFromCatalog = (food: FoodItem) => {

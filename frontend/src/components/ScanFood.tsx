@@ -1,25 +1,47 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Camera, AlertCircle, FileImage, ArrowRight, Loader2, Info, Sparkles } from 'lucide-react';
+import {
+  Upload,
+  Camera,
+  AlertCircle,
+  FileImage,
+  ArrowRight,
+  Loader2,
+  Sparkles,
+} from 'lucide-react';
 import { api, ApiError } from '../services/api';
-import { FoodAnalysisResponse } from '../types';
+import { FoodAnalysisResponse, DetectedFoodItem } from '../types';
+import { FoodConfirmation } from './FoodConfirmation';
 
 interface ScanFoodProps {
-  onAnalysisComplete: (result: FoodAnalysisResponse, previewUrl: string, file: File) => void;
+  onAnalysisComplete: (
+    result: FoodAnalysisResponse,
+    previewUrl: string,
+    file: File,
+    confirmedFoods: DetectedFoodItem[]
+  ) => void;
   onExploreDemo: () => void;
 }
 
-export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExploreDemo }) => {
+export const ScanFood: React.FC<ScanFoodProps> = ({
+  onAnalysisComplete,
+  onExploreDemo,
+}) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string>('Analyzing your meal...');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Analysis result state
+  const [analysisResult, setAnalysisResult] = useState<FoodAnalysisResponse | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const validateAndSetFile = (file: File) => {
     setErrorMessage(null);
+    setAnalysisResult(null);
 
     // Validate size (10 MB)
     if (file.size > 10 * 1024 * 1024) {
@@ -29,7 +51,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
 
     // Validate type
     const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
+    if (!validTypes.includes(file.type.toLowerCase())) {
       setErrorMessage('Unsupported format. Please upload a JPEG, PNG, or WEBP image.');
       return;
     }
@@ -67,41 +89,53 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
 
     setIsLoading(true);
     setErrorMessage(null);
+    setLoadingStep('Analyzing your meal...');
 
     try {
       const response = await api.analyzeImage(selectedFile);
-      onAnalysisComplete(response, previewUrl, selectedFile);
+      setAnalysisResult(response);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMessage(err.message);
       } else {
-        setErrorMessage('Failed to connect to backend server. Please verify the FastAPI service is running.');
+        setErrorMessage('Food analysis failed. Please try again.');
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Helper to load a demo synthetic sample for fast testing
+  const handleReset = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setErrorMessage(null);
+    setAnalysisResult(null);
+  };
+
+  const handleConfirmedFoods = (confirmedFoods: DetectedFoodItem[]) => {
+    if (analysisResult && previewUrl && selectedFile) {
+      onAnalysisComplete(analysisResult, previewUrl, selectedFile, confirmedFoods);
+    }
+  };
+
+  // Helper to load synthetic food samples for rapid testing
   const handleLoadSample = async (sampleName: string, category: string) => {
     setErrorMessage(null);
+    setAnalysisResult(null);
     setIsLoading(true);
 
     try {
-      // Create a canvas-based sample image
       const canvas = document.createElement('canvas');
       canvas.width = 600;
       canvas.height = 400;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Gradient food plate background
         const grad = ctx.createLinearGradient(0, 0, 600, 400);
         grad.addColorStop(0, '#fef3c7');
         grad.addColorStop(1, '#fed7aa');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, 600, 400);
 
-        // Plate
         ctx.beginPath();
         ctx.arc(300, 200, 160, 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
@@ -109,7 +143,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
         ctx.shadowBlur = 15;
         ctx.fill();
 
-        // Label
         ctx.fillStyle = '#1e293b';
         ctx.font = 'bold 24px sans-serif';
         ctx.textAlign = 'center';
@@ -134,6 +167,24 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
     }
   };
 
+  // If analysis result is available, render Food Confirmation flow
+  if (analysisResult) {
+    const foodsList = analysisResult.analysis?.foods || analysisResult.foods || [];
+    const overallConf = analysisResult.analysis?.overall_confidence ?? analysisResult.overall_confidence ?? 0.8;
+    const uncertaintiesList = analysisResult.analysis?.uncertainties || analysisResult.uncertainties || [];
+
+    return (
+      <FoodConfirmation
+        initialFoods={foodsList}
+        overallConfidence={overallConf}
+        uncertainties={uncertaintiesList}
+        imageUrl={previewUrl || undefined}
+        onConfirm={handleConfirmedFoods}
+        onScanAnother={handleReset}
+      />
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
       {/* Title */}
@@ -142,7 +193,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
           Food Image Analysis
         </h2>
         <p className="text-sm text-slate-600">
-          Upload or capture a meal photograph. The image will be verified and prepared for nutritional analysis.
+          Upload or take a meal photograph. Multimodal AI will identify foods, approximate portions, and document visual uncertainties.
         </p>
       </div>
 
@@ -168,7 +219,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
                 Upload your meal photograph
               </h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto mb-6">
-                Drag and drop your food photo here, or browse files on your computer. Supports JPEG, PNG, and WEBP up to 10MB.
+                Drag and drop your food photo here, or browse files. Supports JPEG, PNG, and WEBP up to 10MB.
               </p>
 
               {/* Upload & Camera Buttons */}
@@ -216,29 +267,33 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
               </span>
               <div className="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => handleLoadSample('Chicken Biryani', 'Rice Dish')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-transparent transition-all"
                 >
                   🥘 Chicken Biryani
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleLoadSample('Masala Dosa', 'South Indian')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-transparent transition-all"
                 >
                   🥞 Masala Dosa
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleLoadSample('Roti and Dal', 'Homestyle')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-transparent transition-all"
                 >
-                  🫓 Chapati & Dal Tadka
+                  🫓 Chapati & Dal
                 </button>
                 <button
+                  type="button"
                   onClick={onExploreDemo}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 inline-flex items-center gap-1 transition-all"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  Launch Interactive Demo
+                  Explore Nutrition Demo
                 </button>
               </div>
             </div>
@@ -265,16 +320,39 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
               </div>
             )}
 
+            {/* Loading Indicator with Feedback */}
+            {isLoading && (
+              <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-emerald-600 animate-spin shrink-0" />
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-emerald-950">
+                    {loadingStep}
+                  </div>
+                  <div className="text-[11px] text-emerald-800">
+                    Multimodal vision AI is evaluating visible dishes and portion volume...
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Error message */}
+            {errorMessage && (
+              <div className="flex items-start gap-2.5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-semibold block">Food analysis failed. Please try again.</span>
+                  <span className="text-rose-700">{errorMessage}</span>
+                </div>
+              </div>
+            )}
+
             {/* Action Bar */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedFile(null);
-                  setPreviewUrl(null);
-                  setErrorMessage(null);
-                }}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-slate-600 text-sm font-medium hover:bg-slate-100 transition-colors"
+                onClick={handleReset}
+                disabled={isLoading}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-slate-600 text-sm font-medium hover:bg-slate-100 transition-colors disabled:opacity-50"
               >
                 Choose Different Image
               </button>
@@ -288,7 +366,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Validating & Ingesting...
+                    Analyzing your meal...
                   </>
                 ) : (
                   <>
@@ -300,22 +378,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({ onAnalysisComplete, onExplor
             </div>
           </div>
         )}
-
-        {/* Error message */}
-        {errorMessage && (
-          <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Phase 1 Technical Transparency Notice */}
-        <div className="flex items-start gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
-          <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-          <div>
-            <strong className="text-slate-800">Engineering Rule Compliance:</strong> Image analysis endpoint validates file integrity and formats the pipeline schema. Multimodal vision models will be activated in Phase 2. NutriLens strictly avoids fabricating fake detection results.
-          </div>
-        </div>
       </div>
     </div>
   );

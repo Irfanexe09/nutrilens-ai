@@ -1,5 +1,5 @@
 import os
-from typing import List, Union
+from typing import List, Union, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "NutriLens"
     APP_DESCRIPTION: str = "AI-Powered Food & Nutrition Intelligence Platform"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "0.2.0"
     API_V1_PREFIX: str = "/api"
     DEBUG: bool = False
 
@@ -23,12 +23,18 @@ class Settings(BaseSettings):
     ]
 
     # File uploads
-    UPLOAD_DIR: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads")
+    UPLOAD_DIR: str = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "uploads",
+    )
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
     ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/png", "image/webp"]
 
-    # AI Configuration (Phase 1: placeholder; Phase 2: gemini / vision models)
-    AI_PROVIDER: str = "placeholder"
+    # AI Configuration (Phase 2: Gemini multimodal vision model)
+    AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    AI_TIMEOUT_SECONDS: float = 25.0
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -43,7 +49,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="ignore"
+        extra="ignore",
     )
 
 

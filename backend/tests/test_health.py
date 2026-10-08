@@ -15,5 +15,5 @@ def test_health_endpoint(client: TestClient):
     data = response.json()
     assert data["status"] == "healthy"
     assert data["database"] == "connected"
-    assert data["ai_provider"] == "placeholder"
+    assert data["ai_provider"] in ["gemini", "placeholder"]
     assert "timestamp" in data
