@@ -73,7 +73,7 @@ Each dish features verified macro profiles per reference serving, with custom va
 
 ---
 
-## 🚀 Technology Stack
+## 🚀 Technology Stack:
 
 | Layer | Technology | Rationale |
 |---|---|---|
@@ -86,7 +86,7 @@ Each dish features verified macro profiles per reference serving, with custom va
 
 ---
 
-## 📁 Repository Structure
+## 📁 Repository Structure:
 
 ```
 nutrilens/
