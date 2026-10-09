@@ -60,7 +60,7 @@ flowchart TD
 
 ---
 
-## 🥘 Indian Food Domain Specialization
+## 🥘 Indian Food Domain Specialization:
 
 Indian cuisine features unique culinary complexities—ghee absorption, deep-fried spices, variable water content in dals, and complex gravies. NutriLens is seeded out-of-the-box with authentic regional dishes:
 
