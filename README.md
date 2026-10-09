@@ -12,7 +12,7 @@
 
 ---
 
-## 🍽️ Executive Summary
+## 🍽️ Executive Summary:
 
 Most consumer "AI calorie detectors" suffer from a critical flaw: they prompt a Vision-Language Model to hallucinate arbitrary calorie numbers (e.g. *"This bowl has 687 calories"*). This creates dangerous inaccuracies, zero explainability, and no concept of variance.
 
