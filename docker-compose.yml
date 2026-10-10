@@ -5,10 +5,12 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nutrilens_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nutrilens_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-nutrilens_db}
+    # Security: In production, PostgreSQL stays on the private network (nutrilens-net).
+    # For local debugging, port mapping is restricted strictly to host loopback (127.0.0.1).
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -29,7 +31,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-nutrilens_user}:${POSTGRES_PASSWORD:-nutrilens_password}@db:5432/${POSTGRES_DB:-nutrilens_db}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-nutrilens_user}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-nutrilens_db}}
     command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
     networks:
       - nutrilens-net
@@ -47,14 +49,16 @@ services:
         condition: service_completed_successfully
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-nutrilens_user}:${POSTGRES_PASSWORD:-nutrilens_password}@db:5432/${POSTGRES_DB:-nutrilens_db}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-nutrilens_user}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-nutrilens_db}}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:80,http://localhost}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-nutrilens-secret-key-change-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       RATE_LIMIT_ANALYZE_PER_MINUTE: ${RATE_LIMIT_ANALYZE_PER_MINUTE:-15}
+    # Security: External web traffic must enter via Nginx reverse proxy on frontend service.
+    # Backend direct port is bound strictly to host loopback (127.0.0.1) for local inspection/OpenAPI docs.
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend/uploads:/app/uploads
       - ./data/nutrition:/app/data/nutrition
