@@ -1,6 +1,6 @@
 import os
 from typing import List, Union, Optional
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +56,40 @@ class Settings(BaseSettings):
         elif isinstance(v, list):
             return v
         return ["http://localhost:5173", "http://localhost:3000"]
+
+    @model_validator(mode="after")
+    def validate_production_configuration(self) -> "Settings":
+        """
+        Enforce strict security guardrails when ENVIRONMENT is 'production'.
+        Guarantees that default development secrets and passwords cannot leak into production.
+        """
+        if self.is_production():
+            insecure_secret_fallbacks = {
+                "nutrilens-secret-key-super-secure-change-in-production",
+                "nutrilens-secret-key-change-in-production",
+                "secret",
+                "changeme",
+                "password",
+            }
+            # 1. JWT Secret Validation
+            if not self.JWT_SECRET_KEY or self.JWT_SECRET_KEY.strip() in insecure_secret_fallbacks:
+                raise ValueError(
+                    "Production configuration error: JWT_SECRET_KEY must be explicitly set to a strong, "
+                    "cryptographically random secret (e.g. generated via 'openssl rand -hex 32'). "
+                    "Using default or empty keys in production is forbidden."
+                )
+            if len(self.JWT_SECRET_KEY.strip()) < 32:
+                raise ValueError(
+                    "Production configuration error: JWT_SECRET_KEY must be at least 32 characters long."
+                )
+
+            # 2. Database Password Validation
+            if "nutrilens_password" in self.DATABASE_URL:
+                raise ValueError(
+                    "Production configuration error: DATABASE_URL contains default development password "
+                    "'nutrilens_password'. Please provide a secure, unique database password in production."
+                )
+        return self
 
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"

@@ -19,13 +19,10 @@ def get_ai_provider(provider_type: Optional[str] = None) -> AIProvider:
 
     if selected == "gemini":
         api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
-        if api_key:
-            return GeminiVisionAIProvider(api_key=api_key)
-        else:
-            logger.warning(
-                "GEMINI_API_KEY is not set. Operating in graceful fallback mode using PlaceholderAIProvider."
-            )
-            return PlaceholderAIProvider()
+        # Return Gemini provider directly. If api_key is missing, the provider raises
+        # AIProviderConfigError upon invocation, returning a transparent HTTP 503 rather
+        # than silently pretending analysis succeeded with fake mock data.
+        return GeminiVisionAIProvider(api_key=api_key)
 
     if selected == "placeholder":
         return PlaceholderAIProvider()

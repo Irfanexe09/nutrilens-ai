@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.database.base import Base
 from app.database.session import get_db
 from app.main import app
@@ -20,6 +21,18 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_environment():
+    """Ensure test suite runs under isolated testing environment without requiring Gemini credentials."""
+    prev_provider = settings.AI_PROVIDER
+    prev_env = settings.ENVIRONMENT
+    settings.AI_PROVIDER = "placeholder"
+    settings.ENVIRONMENT = "testing"
+    yield
+    settings.AI_PROVIDER = prev_provider
+    settings.ENVIRONMENT = prev_env
 
 
 @pytest.fixture(scope="session", autouse=True)
