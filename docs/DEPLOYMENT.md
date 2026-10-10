@@ -53,6 +53,12 @@ Create a production `.env` file on the deployment host. **Never commit real cred
 | `RATE_LIMIT_ANALYZE_PER_MINUTE` | Per-client rate limit for vision calls | `15` |
 | `MAX_UPLOAD_SIZE_BYTES` | File upload ceiling in bytes | `10485760` (10 MB) |
 
+### Strict Production Validation Rules
+When `ENVIRONMENT=production`, NutriLens enforces automated security guardrails on startup:
+1. **JWT Secret Strength**: `JWT_SECRET_KEY` must be explicitly defined and at least 32 characters long. Using default fallbacks (`nutrilens-secret-key-change-in-production`, `secret`, `changeme`) triggers an immediate fatal startup error. Generate with `openssl rand -hex 32`.
+2. **Database Password**: `DATABASE_URL` cannot contain the default development password (`nutrilens_password`).
+3. **Port Isolation**: In `docker-compose.yml`, direct host bindings for PostgreSQL (`5432`) and backend FastAPI (`8000`) are restricted strictly to the host loopback interface (`127.0.0.1`). External incoming web traffic must ingress via the Nginx frontend reverse proxy (`${FRONTEND_PORT:-5173}`).
+
 ---
 
 ## 3. Deployment Procedure
@@ -62,7 +68,8 @@ Create a production `.env` file on the deployment host. **Never commit real cred
 git clone https://github.com/Irfanexe09/nutrilens-ai.git
 cd nutrilens-ai
 cp .env.example .env
-# Edit .env with your production credentials:
+# Edit .env with your cryptographically generated production credentials:
+# Generate JWT secret: openssl rand -hex 32
 chmod 600 .env
 ```
 
