@@ -85,14 +85,53 @@ curl -f http://localhost:8000/api/health
 
 ---
 
-## 4. Database Migrations & Upgrades
+## 4. Operational Commands & Maintenance
 
-The `nutrilens-migration` service automatically runs `alembic -c alembic.ini upgrade head` upon stack startup before the backend starts listening.
-
-To run migrations manually or check revision history:
+### 4.1 Viewing Service Logs
+Stream logs in real-time across all services or for a specific container:
 ```bash
+# Stream all logs:
+docker compose logs -f
+
+# Stream backend API logs only:
+docker compose logs -f backend
+
+# Inspect migration execution logs:
+docker compose logs migration
+
+# Stream database query logs:
+docker compose logs -f db
+```
+
+### 4.2 Inspecting Container Status & Healthchecks
+Inspect the running status and health check state of all orchestrated containers:
+```bash
+docker compose ps
+```
+Healthy containers will show `Up (healthy)`. The `migration` service should show `Exited (0)`.
+
+### 4.3 Database Migrations & Upgrades
+The `nutrilens-migration` service automatically runs `alembic -c alembic.ini upgrade head` upon stack startup before the backend service starts listening.
+
+To inspect current revision or run migrations manually:
+```bash
+# Check current migration revision:
 docker compose run --rm backend alembic current
+
+# Upgrade to latest revision manually:
 docker compose run --rm backend alembic upgrade head
+
+# Rollback one revision (if needed):
+docker compose run --rm backend alembic downgrade -1
+```
+
+### 4.4 Stopping the Application
+```bash
+# Stop and preserve all containers and persistent database volumes:
+docker compose down
+
+# Stop and wipe persistent PostgreSQL volumes (fresh start):
+docker compose down -v
 ```
 
 ---
@@ -104,3 +143,21 @@ docker compose run --rm backend alembic upgrade head
    docker exec -t nutrilens-db pg_dump -U nutrilens_user nutrilens_db > backup_$(date +%F).sql
    ```
 2. **Food Photography Uploads**: Mounted at `./backend/uploads:/app/uploads`. The backend automatically prunes uploads older than 24 hours (`IMAGE_RETENTION_SECONDS = 86400`) during upload requests and application startup.
+
+---
+
+## 6. Production Limitations & Scaling Roadmap
+
+The provided Docker Compose configuration is designed for **local development, CI verification, and single-host VM deployment**.
+
+For production deployments at scale, the following enterprise infrastructure components are recommended:
+
+| Production Component | Docker Compose (Current) | Production Architecture (Recommended) |
+| :--- | :--- | :--- |
+| **Relational Database** | Containerized PostgreSQL 16 on local volume | Managed Relational Database (AWS RDS PostgreSQL / Google Cloud SQL) with automated backups and read-replicas |
+| **Media Storage** | Local host volume mount (`/app/uploads`) | S3-compatible Object Storage (AWS S3 / Google Cloud Storage) with CDN delivery |
+| **Secrets Management** | Local `.env` file | Enterprise Secret Vault (AWS Secrets Manager / Google Secret Manager / HashiCorp Vault) |
+| **Container Orchestration** | Docker Compose on single VM | Managed Container Service (Kubernetes / AWS ECS / Google Cloud Run) with horizontal pod autoscaling |
+| **TLS & Routing** | Reverse proxy on port 80 | TLS Termination via Cloud Load Balancer (AWS ALB / Cloudflare) with automated SSL certificates |
+| **Telemetry & Observability** | In-process `/api/health` probe & console logs | Distributed Tracing & Metrics (OpenTelemetry, Prometheus, Grafana, Datadog) |
+

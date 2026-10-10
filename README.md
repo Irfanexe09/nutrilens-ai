@@ -182,17 +182,52 @@ The frontend interface will open at `http://localhost:5173`.
 
 ---
 
-## 🐳 Docker Deployment
+## 🐳 Docker Deployment & Orchestration
 
-To spin up the complete production-ready stack (PostgreSQL + FastAPI + React + Nginx):
+NutriLens provides a production-grade multi-container topology orchestrated via Docker Compose:
+- **`nutrilens-db`**: PostgreSQL 16 Alpine with persistent volume and internal healthchecks.
+- **`nutrilens-migration`**: Automated Alembic migration runner executing `alembic upgrade head` before backend startup.
+- **`nutrilens-backend`**: Hardened multi-stage Python 3.12 FastAPI container running as non-root unprivileged user `appuser`.
+- **`nutrilens-frontend`**: Multi-stage Node 20 build served via Nginx with production security headers, gzip, SPA routing, and reverse-proxying.
 
-```bash
-docker-compose up --build
-```
+### Quickstart with Docker Compose
 
-- **Frontend**: `http://localhost:5173`
-- **Backend API**: `http://localhost:8000`
-- **PostgreSQL**: `localhost:5432`
+1. **Configure Environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your secrets (GEMINI_API_KEY, JWT_SECRET_KEY, etc.)
+   ```
+
+2. **Build and Launch All Services**:
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. **Verify Container Health & Probes**:
+   ```bash
+   docker compose ps
+   ```
+
+4. **Access Endpoints**:
+   - **Frontend UI**: `http://localhost:5173` (served by Nginx with `/api` reverse proxy)
+   - **Backend API**: `http://localhost:8000`
+   - **Health Telemetry**: `http://localhost:8000/api/health`
+   - **Interactive API Documentation**: `http://localhost:8000/docs`
+   - **PostgreSQL Database**: `localhost:5432`
+
+5. **Operational Logs & Teardown**:
+   ```bash
+   # Stream live application logs:
+   docker compose logs -f backend
+
+   # Graceful teardown (preserves database):
+   docker compose down
+
+   # Teardown with database volume wipe:
+   docker compose down -v
+   ```
+
+For advanced production architecture, scaling strategies, and manual Alembic migration commands, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
