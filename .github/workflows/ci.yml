@@ -6,13 +6,31 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   backend-test:
-    name: Backend Tests & Database Migrations
+    name: Backend Tests & Database Migrations (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nutrilens_ci_user
+          POSTGRES_PASSWORD: nutrilens_ci_password
+          POSTGRES_DB: nutrilens_ci_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Check out repository
@@ -25,7 +43,7 @@ jobs:
           cache: "pip"
           cache-dependency-path: "backend/requirements.txt"
 
-      - name: Install system dependencies for Pillow
+      - name: Install system dependencies for Pillow and PostgreSQL
         run: |
           sudo apt-get update
           sudo apt-get install -y libpq-dev
@@ -35,9 +53,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Verify Alembic database migrations from scratch
+      - name: Verify migrations against SQLite from scratch
         env:
-          DATABASE_URL: sqlite:///./ci_fresh_test.db
+          DATABASE_URL: sqlite:///./ci_fresh_sqlite.db
+        run: |
+          alembic -c backend/alembic.ini upgrade head
+
+      - name: Verify migrations against PostgreSQL 16 container from scratch
+        env:
+          DATABASE_URL: postgresql://nutrilens_ci_user:nutrilens_ci_password@localhost:5432/nutrilens_ci_db
         run: |
           alembic -c backend/alembic.ini upgrade head
 
