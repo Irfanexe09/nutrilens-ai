@@ -17,7 +17,12 @@ import {
   MealFilterParams,
 } from '../types';
 
-const API_BASE = '/api';
+// Base API URL configuration.
+// Defaults to relative '/api' which is proxied by Nginx in Docker or Vite in local development.
+// In split-host deployments, VITE_API_BASE_URL can override this (e.g., https://api.nutrilens.app/api).
+// SECURITY NOTICE: All VITE_* environment variables are embedded into client-side JS bundles at build time
+// and are completely public. NEVER store private secrets, database keys, or server credentials in VITE_* vars.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || '/api';
 const TOKEN_KEY = 'nutrilens_auth_token';
 
 export class ApiError extends Error {
