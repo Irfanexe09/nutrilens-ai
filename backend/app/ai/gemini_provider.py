@@ -203,9 +203,9 @@ class GeminiVisionAIProvider(AIProvider):
             f"3. Do NOT give medical advice or diagnose any condition.\n"
             f"4. Focus on satiety, energy balance, protein, and dietary fiber."
         )
-        if self.client:
+        if self._client:
             try:
-                response = await self.client.aio.models.generate_content(
+                response = await self._client.aio.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
                 )

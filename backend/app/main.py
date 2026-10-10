@@ -28,9 +28,19 @@ logger = logging.getLogger("nutrilens")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Ensure tables exist and seed database if empty
+    logger.info(f"Starting NutriLens in '{settings.ENVIRONMENT}' mode (debug={settings.DEBUG})")
     logger.info("Initializing database schema...")
     Base.metadata.create_all(bind=engine)
     
+    # Prune stale transient food image uploads on startup
+    try:
+        from app.services.analysis_service import AnalysisService
+        cleaned = AnalysisService.cleanup_old_uploads(settings.IMAGE_RETENTION_SECONDS)
+        if cleaned > 0:
+            logger.info(f"Cleaned up {cleaned} stale transient food upload files.")
+    except Exception as e:
+        logger.warning(f"Notice during upload cleanup: {e}")
+
     # Auto-seed initial nutrition data
     db = SessionLocal()
     try:

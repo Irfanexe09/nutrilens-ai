@@ -12,7 +12,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.core.config import settings
 from app.database.base import Base
-from app.models import FoodItem, Meal, MealItem  # Ensure models are loaded
+from app.models import (
+    FoodItem,
+    Meal,
+    MealItem,
+    User,
+    UserProfile,
+    DailyNutritionTarget,
+)  # Ensure all models are loaded
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -60,7 +67,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
         )
 
         with context.begin_transaction():

@@ -26,10 +26,35 @@ logger = logging.getLogger("nutrilens.services.analysis")
 
 
 class AnalysisService:
+    @classmethod
+    def cleanup_old_uploads(cls, max_age_seconds: int = 86400) -> int:
+        """
+        Removes temporary food upload files older than max_age_seconds.
+        Prevents unbounded disk storage growth from transient uploads.
+        """
+        removed = 0
+        if not os.path.exists(settings.UPLOAD_DIR):
+            return 0
+        now = time.time()
+        for fname in os.listdir(settings.UPLOAD_DIR):
+            if fname.startswith("."):
+                continue
+            fpath = os.path.join(settings.UPLOAD_DIR, fname)
+            try:
+                if os.path.isfile(fpath):
+                    mtime = os.path.getmtime(fpath)
+                    if (now - mtime) > max_age_seconds:
+                        os.remove(fpath)
+                        removed += 1
+            except Exception as e:
+                logger.warning(f"Failed to remove stale upload '{fname}': {e}")
+        return removed
+
     @staticmethod
     def validate_image_file(file: UploadFile, content: bytes) -> Tuple[int, int]:
         """
-        Validates content type, file size, and verifies image integrity using PIL.
+        Validates content type, file size, actual decoded format, dimensions,
+        and verifies image integrity with Pillow decompression bomb protection.
         Returns (width, height).
         """
         if not content or len(content) == 0:
@@ -54,14 +79,37 @@ class AnalysisService:
                 detail=f"Unsupported image format: {file.content_type}. Allowed types: {allowed}",
             )
 
-        # Verify image integrity
+        # Enforce Pillow decompression bomb limit
+        Image.MAX_IMAGE_PIXELS = settings.MAX_IMAGE_PIXELS
+
+        # Verify image integrity and decode structure
         try:
             image = Image.open(io.BytesIO(content))
             image.verify()  # Verifies file header and structure
-            # Reopen to get dimensions (verify() closes/invalidates the image stream)
+
+            # Reopen to get format and dimensions (verify() closes/invalidates the image stream)
             image = Image.open(io.BytesIO(content))
+            decoded_format = (image.format or "").upper()
+            if decoded_format not in ["JPEG", "PNG", "WEBP"]:
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=f"Unsupported decoded image format: {decoded_format}. Allowed formats: JPEG, PNG, WEBP.",
+                )
+
             width, height = image.size
+            if width > 6000 or height > 6000 or (width * height) > settings.MAX_IMAGE_PIXELS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Image resolution exceeds maximum allowable limits (max 6000x6000px or 25 megapixels). Possible decompression bomb.",
+                )
             return width, height
+        except HTTPException:
+            raise
+        except Image.DecompressionBombError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image exceeded maximum allowable pixel count (Pillow decompression bomb protection).",
+            )
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -78,6 +126,12 @@ class AnalysisService:
 
         content = await file.read()
         width, height = cls.validate_image_file(file, content)
+
+        # Trigger safe background transient cleanup of stale uploads
+        try:
+            cls.cleanup_old_uploads(settings.IMAGE_RETENTION_SECONDS)
+        except Exception:
+            pass
 
         # Generate unique identifier and store file safely
         session_id = str(uuid.uuid4())

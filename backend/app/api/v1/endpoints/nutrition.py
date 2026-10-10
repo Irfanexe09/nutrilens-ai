@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.schemas.nutrition import (
 from app.schemas.food import FoodItemListResponse, FoodItemResponse
 from app.services.food_service import FoodService
 
+logger = logging.getLogger("nutrilens.nutrition")
 router = APIRouter(prefix="/nutrition", tags=["Nutrition Engine"])
 
 
@@ -69,9 +71,10 @@ def calculate_nutrition(
             detail=str(e),
         )
     except Exception as e:
+        logger.error(f"Deterministic nutrition calculation encountered an unexpected error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deterministic nutrition calculation encountered an error: {str(e)}",
+            detail="Deterministic nutrition calculation encountered an unexpected internal error.",
         )
 
     # Convert dataclass result to pydantic response

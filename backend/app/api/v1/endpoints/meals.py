@@ -29,6 +29,8 @@ def create_meal(
     """
     if current_user:
         meal_in.user_id = current_user.id
+    else:
+        meal_in.user_id = None
 
     service = MealService(db)
     meal = service.create_meal(meal_in)
@@ -55,12 +57,19 @@ def get_meal(
             detail=f"Meal with ID '{meal_id}' not found",
         )
 
-    # User isolation: If meal has an owner and authenticated requester is not the owner, forbid access
-    if current_user and meal.user_id and meal.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this meal",
-        )
+    # User isolation: If meal has an owner, verify requester authentication and ownership
+    if meal.user_id is not None:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required to access this meal",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if meal.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to access this meal",
+            )
 
     formatted = f"Estimated: ~{int(round(meal.total_calories))} kcal (±{int(round(meal.uncertainty_calories))} kcal)"
     response_data = MealResponse.model_validate(meal)
@@ -84,10 +93,12 @@ def list_meals(
     """List recorded meals with pagination and history filters, isolated by user if authenticated."""
     service = MealService(db)
     user_id = current_user.id if current_user else None
+    guest_only = current_user is None
     meals, total = service.list_meals(
         skip=skip,
         limit=limit,
         user_id=user_id,
+        guest_only=guest_only,
         meal_type=meal_type,
         target_date=date_filter,
         start_date=start_date,

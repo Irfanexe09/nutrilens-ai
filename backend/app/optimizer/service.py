@@ -65,11 +65,18 @@ class MealOptimizationService:
             )
 
         # 2. User ownership validation (isolation)
-        if current_user_id and meal.user_id and meal.user_id != current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access or optimize this meal",
-            )
+        if meal.user_id is not None:
+            if not current_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required to access or optimize this meal",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if meal.user_id != current_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to access or optimize this meal",
+                )
 
         # 3. Resolve user profile, goal, and daily targets
         effective_user_id = meal.user_id or current_user_id
@@ -287,11 +294,18 @@ class MealOptimizationService:
             )
 
         # 2. Ownership check
-        if current_user_id and orig_meal.user_id and orig_meal.user_id != current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to modify or optimize this meal",
-            )
+        if orig_meal.user_id is not None:
+            if not current_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required to modify or optimize this meal",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if orig_meal.user_id != current_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to modify or optimize this meal",
+                )
 
         if not request.items:
             raise HTTPException(

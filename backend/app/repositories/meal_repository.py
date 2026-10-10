@@ -23,6 +23,7 @@ class MealRepository:
         skip: int = 0,
         limit: int = 20,
         user_id: Optional[str] = None,
+        guest_only: bool = False,
         meal_type: Optional[str] = None,
         target_date: Optional[date] = None,
         start_date: Optional[date] = None,
@@ -33,6 +34,8 @@ class MealRepository:
         query = db.query(Meal)
         if user_id is not None:
             query = query.filter(Meal.user_id == user_id)
+        elif guest_only:
+            query = query.filter(Meal.user_id.is_(None))
 
         if meal_type:
             query = query.filter(func.lower(Meal.meal_type) == meal_type.lower().strip())

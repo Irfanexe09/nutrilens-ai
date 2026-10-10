@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "NutriLens"
     APP_DESCRIPTION: str = "AI-Powered Food & Nutrition Intelligence Platform"
+    ENVIRONMENT: str = "development"  # "development", "production", "testing"
     APP_VERSION: str = "0.2.0"
     API_V1_PREFIX: str = "/api"
     DEBUG: bool = False
@@ -27,13 +28,18 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
-    # File uploads
+    # File uploads & Image Security
     UPLOAD_DIR: str = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "uploads",
     )
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+    MAX_IMAGE_PIXELS: int = 25_000_000  # 25 megapixels (Pillow decompression bomb protection)
+    IMAGE_RETENTION_SECONDS: int = 86400  # 24 hours transient upload retention
     ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/png", "image/webp"]
+
+    # Rate Limiting
+    RATE_LIMIT_ANALYZE_PER_MINUTE: int = 15
 
     # AI Configuration (Phase 2: Gemini multimodal vision model)
     AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
@@ -45,10 +51,14 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
+            origins = [i.strip() for i in v.split(",") if i.strip()]
+            return origins if origins else ["http://localhost:5173", "http://localhost:3000"]
         elif isinstance(v, list):
             return v
-        return ["*"]
+        return ["http://localhost:5173", "http://localhost:3000"]
+
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
 
     model_config = SettingsConfigDict(
         env_file=".env",
