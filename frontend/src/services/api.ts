@@ -13,6 +13,8 @@ import {
   EvaluateMealResponse,
   MealOptimizationResponse,
   CandidateItem,
+  WeeklyAnalyticsResponse,
+  MealFilterParams,
 } from '../types';
 
 const API_BASE = '/api';
@@ -116,14 +118,33 @@ export const api = {
   },
 
   // Daily Nutrition Tracking
-  async getDailyNutrition(targetDate?: string): Promise<DailyNutritionResponse> {
+  async getDailyNutrition(targetDate?: string, tzOffsetMinutes?: number): Promise<DailyNutritionResponse> {
     const params = new URLSearchParams();
     if (targetDate) params.append('target_date', targetDate);
+    const offset = tzOffsetMinutes !== undefined ? tzOffsetMinutes : new Date().getTimezoneOffset();
+    params.append('tz_offset_minutes', offset.toString());
 
     const res = await fetch(`${API_BASE}/daily-nutrition?${params.toString()}`, {
       headers: { ...getAuthHeader() },
     });
     return handleResponse<DailyNutritionResponse>(res);
+  },
+
+  async getWeeklyAnalytics(
+    endDate?: string,
+    days: number = 7,
+    tzOffsetMinutes?: number
+  ): Promise<WeeklyAnalyticsResponse> {
+    const params = new URLSearchParams();
+    if (endDate) params.append('end_date', endDate);
+    params.append('days', days.toString());
+    const offset = tzOffsetMinutes !== undefined ? tzOffsetMinutes : new Date().getTimezoneOffset();
+    params.append('tz_offset_minutes', offset.toString());
+
+    const res = await fetch(`${API_BASE}/daily-nutrition/weekly?${params.toString()}`, {
+      headers: { ...getAuthHeader() },
+    });
+    return handleResponse<WeeklyAnalyticsResponse>(res);
   },
 
   async evaluateMeal(data: {
@@ -243,6 +264,30 @@ export const api = {
       headers: { ...getAuthHeader() },
     });
     return handleResponse<Meal>(res);
+  },
+
+  async getMeals(
+    skip: number = 0,
+    limit: number = 20,
+    filters?: MealFilterParams
+  ): Promise<{ total: number; meals: Meal[] }> {
+    const params = new URLSearchParams();
+    params.append('skip', skip.toString());
+    params.append('limit', limit.toString());
+    if (filters?.meal_type) params.append('meal_type', filters.meal_type);
+    if (filters?.date) params.append('date', filters.date);
+    if (filters?.start_date) params.append('start_date', filters.start_date);
+    if (filters?.end_date) params.append('end_date', filters.end_date);
+    if (filters?.is_optimized_version !== undefined) {
+      params.append('is_optimized_version', filters.is_optimized_version.toString());
+    }
+    const offset = filters?.tz_offset_minutes !== undefined ? filters.tz_offset_minutes : new Date().getTimezoneOffset();
+    params.append('tz_offset_minutes', offset.toString());
+
+    const res = await fetch(`${API_BASE}/meals?${params.toString()}`, {
+      headers: { ...getAuthHeader() },
+    });
+    return handleResponse<{ total: number; meals: Meal[] }>(res);
   },
 
   async optimizeMeal(mealId: string, goal?: string): Promise<MealOptimizationResponse> {

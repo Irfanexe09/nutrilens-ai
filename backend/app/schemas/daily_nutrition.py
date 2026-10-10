@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -48,6 +48,7 @@ class DailyMealSummary(BaseModel):
     meal_type: str
     image_url: Optional[str] = None
     created_at: Optional[str] = None
+    time_logged: Optional[str] = None
     calories: float
     protein: float
     carbohydrates: float
@@ -55,6 +56,11 @@ class DailyMealSummary(BaseModel):
     fiber: float
     formatted_estimate: str
     item_count: int
+    food_names: List[str] = Field(default_factory=list)
+    parent_meal_id: Optional[str] = None
+    is_optimized_version: bool = False
+    optimization_notes: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class DailyNutritionResponse(BaseModel):
@@ -66,6 +72,8 @@ class DailyNutritionResponse(BaseModel):
     percentages: PercentagesSummary
     meals: List[DailyMealSummary]
     meal_count: int
+    data_completeness: str = "UNLOGGED"  # UNLOGGED, PARTIAL, LOGGED
+    timeline: Optional[Dict[str, List[DailyMealSummary]]] = None
 
 
 class EvaluateMealRequest(BaseModel):
@@ -82,3 +90,60 @@ class EvaluateMealResponse(BaseModel):
     remaining_calories_after_meal: float
     fits_remaining_budget: bool
     insights: List[str]
+
+
+# ==========================================
+# Phase 6: Weekly Analytics & Trends Schemas
+# ==========================================
+
+class DayAnalyticsItem(BaseModel):
+    date: str
+    day_name: str  # Mon, Tue, etc.
+    has_logs: bool
+    data_completeness: str  # UNLOGGED, PARTIAL, LOGGED
+    meal_count: int
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbohydrates: Optional[float] = None
+    fat: Optional[float] = None
+    fiber: Optional[float] = None
+    calorie_target: float
+    protein_target: float
+    is_over_calorie_target: bool = False
+    overage_calories: float = 0.0
+    calorie_percentage: float = 0.0
+    protein_target_met: bool = False
+
+
+class PeriodComparisonSummary(BaseModel):
+    has_comparison: bool
+    prev_period_logged_days: int
+    prev_period_average_calories: Optional[float] = None
+    calorie_difference: Optional[float] = None
+    percent_change: Optional[float] = None
+    message: Optional[str] = None
+
+
+class WeeklyTrendInsights(BaseModel):
+    logged_days_count: int
+    total_days: int = 7
+    average_calories_logged_days: Optional[float] = None
+    average_protein_logged_days: Optional[float] = None
+    average_carbs_logged_days: Optional[float] = None
+    average_fat_logged_days: Optional[float] = None
+    average_fiber_logged_days: Optional[float] = None
+    protein_target_met_days: int = 0
+    highest_calorie_day: Optional[Dict[str, Any]] = None
+    lowest_calorie_day: Optional[Dict[str, Any]] = None
+    previous_period_comparison: Optional[PeriodComparisonSummary] = None
+    insights_statements: List[str] = Field(default_factory=list)
+    disclaimer: str = (
+        "Trend statistics reflect recorded meals only and do not establish unlogged consumption or clinical body weight changes."
+    )
+
+
+class WeeklyAnalyticsResponse(BaseModel):
+    start_date: str
+    end_date: str
+    days: List[DayAnalyticsItem]
+    insights: WeeklyTrendInsights

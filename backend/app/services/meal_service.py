@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.meal import Meal
@@ -101,6 +102,26 @@ class MealService:
         return self.meal_repo.get_by_id(self.db, meal_id)
 
     def list_meals(
-        self, skip: int = 0, limit: int = 20, user_id: Optional[str] = None
+        self,
+        skip: int = 0,
+        limit: int = 20,
+        user_id: Optional[str] = None,
+        meal_type: Optional[str] = None,
+        target_date: Optional[date] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        is_optimized_version: Optional[bool] = None,
+        tz_offset_minutes: int = 0,
     ) -> Tuple[List[Meal], int]:
-        return self.meal_repo.list_meals(self.db, skip=skip, limit=limit, user_id=user_id)
+        return self.meal_repo.list_meals(
+            self.db,
+            skip=skip,
+            limit=limit,
+            user_id=user_id,
+            meal_type=meal_type,
+            target_date=target_date,
+            start_date=start_date,
+            end_date=end_date,
+            is_optimized_version=is_optimized_version,
+            tz_offset_minutes=tz_offset_minutes,
+        )

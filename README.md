@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/Tests-67%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-75%20Passed-brightgreen.svg)]()
 
 ---
 
@@ -249,11 +249,16 @@ tests/test_nutrition_engine.py::test_determinism_across_multiple_runs PASSED [10
 - `GET /api/foods/{id}` — Fetch detailed macro breakdown and recipe variance for a food.
 - `POST /api/foods` — Add a new verified food item to the catalog.
 
-### Nutrition Calculation & Meals (Phase 3)
+### Nutrition Calculation & Meals (Phase 3 & 6)
 - `POST /api/nutrition/calculate` — Deterministically computes macros, Atwater distribution, and uncertainty interval without saving.
 - `POST /api/meals` — Persists a user-confirmed meal and its constituent items.
 - `GET /api/meals/{id}` — Fetches recorded meal with formatted honest estimation string.
-- `GET /api/meals` — Lists recorded meals with pagination and daily aggregation.
+- `GET /api/meals` — Lists recorded meals with pagination, meal type filtering, date filtering, and optimization version filtering.
+
+### Daily Tracking & Weekly Analytics (Phase 6)
+- `GET /api/daily-nutrition` — Aggregates real-time intake against daily targets, calculates remaining/overage, and provides a 4-slot timeline (Breakfast, Lunch, Dinner, Snacks) with timezone boundary handling.
+- `GET /api/daily-nutrition/weekly` — Single-query 7-day analytics window returning daily consumption, target comparisons, explicit unlogged-day statuses, and deterministic trend insights.
+- `POST /api/daily-nutrition/evaluate-meal` — Evaluates candidate meal fit against daily remaining budget.
 
 ### AI Meal Optimizer (Phase 5)
 - `POST /api/meals/{id}/optimize` — Analyzes meal against user profile/goals, runs deterministic candidate generator, scores options, and attaches grounded AI explanations.
@@ -322,14 +327,65 @@ Explanations are generated via `explain_meal_optimization` in `AIProvider`. The 
 When a user clicks **"Apply Suggestion"**:
 1. The original meal is **never overwritten or deleted**.
 2. A new `Meal` row is created with `parent_meal_id = original_meal.id`, `is_optimized_version = True`, and descriptive `optimization_notes`.
-3. Complete auditability and historical tracking are preserved.
-4. User authorization is enforced: users can only optimize and mutate their own meals.
+---
+
+## 📊 Phase 6 — Nutrition Tracking & Analytics Dashboard Architecture
+
+Phase 6 implements a comprehensive, auditable tracking and analytics dashboard that provides clear longitudinal visibility into daily food intake, meal timeline distribution, weekly consistency, and macro compliance without making unsupported clinical claims.
+
+```
+                   User Food Intake & Logs
+                             │
+                             ▼
+              [Date & Timezone Normalizer]
+      Local Date <──> Client Offset (-330 IST, etc.) <──> UTC Bounds
+                             │
+            ┌────────────────┴────────────────┐
+            ▼                                 ▼
+   [DailyTrackingService]           [WeeklyAnalyticsService]
+   • 4-Slot Meal Timeline           • Single-query 7-day range
+     (Breakfast, Lunch, Dinner,     • Explicit UNLOGGED days (not 0 kcal)
+      Snacks)                       • Averages across logged days only
+   • Exact consumed sums            • Period-over-period comparison
+   • Remaining vs Overage           • Deterministic factual insights
+   • Data completeness status
+```
+
+### 1. Daily Aggregation & 4-Slot Timeline
+- Evaluates real-time intake against personalized Mifflin-St Jeor targets.
+- Displays calories, protein, carbs, fat, and fiber with progress bars.
+- When intake exceeds targets, displays clear overage (e.g. `+185 kcal over daily target`) rather than confusing negative values, avoiding medicalized or shaming language.
+- Groups meals into four daily chronological slots: **Breakfast**, **Lunch**, **Dinner**, and **Snacks & Beverages**, displaying constituent dish names, timestamps, and deep inspection links.
+
+### 2. Date Boundaries & Timezone Normalization
+- All timestamps are stored in UTC in SQLite/PostgreSQL.
+- When aggregating intake, client timezone offsets (`tz_offset_minutes = (UTC - Local)` in minutes, from `JS Date.getTimezoneOffset()`) are used to compute exact UTC query boundaries:
+  $$\text{UTC Start} = \text{Local Midnight} + \text{tz\_offset\_minutes}$$
+  $$\text{UTC End} = \text{Local 23:59:59} + \text{tz\_offset\_minutes}$$
+- This guarantees that meals logged near midnight (e.g. 11:45 PM or 12:15 AM) appear on the user's correct local calendar date without off-by-one shifts.
+
+### 3. Missing-Data & Unlogged Days Handling
+- **A day with no logged meals is NOT a day with zero food intake.**
+- Unlogged days are explicitly reported with `has_logs: false`, `calories: null`, and `data_completeness: "UNLOGGED"`.
+- Weekly averages are calculated strictly over days with recorded logs (e.g., *Average across 4 logged days: 1,920 kcal*), preventing unlogged days from artificially depressing weekly averages.
+
+### 4. Deterministic Trend Insights & Period Delta
+- Calculates logged consistency (e.g. *5 of 7 days logged*), protein target compliance (*4 of 5 logged days met target*), and highest/lowest recorded intake days.
+- When sufficient prior data exists, computes period-over-period comparisons against the preceding 7-day window.
+- Generates factual, objective summaries without unsupported claims regarding clinical body-weight or muscle-mass changes.
+
+### 5. Auditable Meal History Log
+- Full search and filtering capabilities across logged history:
+  - Filter by meal category (Breakfast, Lunch, Dinner, Snack).
+  - Filter by calendar date.
+  - Filter by optimization version (`All`, `Original Only`, `Optimized Only`).
+- Preserves full audit trails of original baseline meals and optimized versions.
 
 ---
 
 ## ⚕️ Nutrition & Health Disclaimer
 
-> **IMPORTANT**: NutriLens is an educational and lifestyle nutrition estimation system. Calculated Basal Metabolic Rates (BMR), Total Daily Energy Expenditures (TDEE), and meal optimization recommendations are **estimates based on population averages** (Mifflin-St Jeor equation and verified reference databases) and do **not** constitute medical advice, clinical dietary prescriptions, or medical treatment plans. Always consult a certified dietitian or physician for clinical dietary requirements.
+> **IMPORTANT**: NutriLens is an educational and lifestyle nutrition estimation system. Calculated Basal Metabolic Rates (BMR), Total Daily Energy Expenditures (TDEE), meal optimization recommendations, and analytics trends are **estimates based on population averages** (Mifflin-St Jeor equation and verified reference databases) and do **not** constitute medical advice, clinical dietary prescriptions, or medical treatment plans. Always consult a certified dietitian or physician for clinical dietary requirements.
 
 ---
 
@@ -373,3 +429,13 @@ When a user clicks **"Apply Suggestion"**:
   - Versioned meal persistence with `parent_meal_id` linking
   - Interactive Before/After comparison modal with honest uncertainty
   - 67 automated unit, integration, and security tests passing
+- [x] **Phase 6: Nutrition Tracking & Analytics Dashboard (Completed)**
+  - Real-time daily calorie and macronutrient tracking with overage clarity
+  - 4-slot meal timeline (Breakfast, Lunch, Dinner, Snacks) with dish breakdowns
+  - 7-day weekly analytics chart with single-query range aggregation
+  - Explicit distinction between unlogged days and zero consumption
+  - Deterministic trend metrics: logged consistency, protein compliance, period delta
+  - Timezone boundary conversion guaranteeing midnight meal accuracy
+  - Filterable meal history (by meal category, date, and optimization version)
+  - Full user data isolation across all dashboard, analytics, and history endpoints
+  - 75 automated unit, integration, and security tests passing

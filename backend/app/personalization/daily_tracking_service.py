@@ -1,10 +1,13 @@
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.models.meal import Meal
-from app.models.user import DailyNutritionTarget, UserProfile
+from app.models.user import DailyNutritionTarget
+from app.analytics.date_utils import (
+    get_utc_bounds_for_local_date,
+    format_local_time,
+)
 
 
 class DailyTrackingService:
@@ -20,15 +23,16 @@ class DailyTrackingService:
         self,
         user_id: str,
         target_date: Optional[date] = None,
+        tz_offset_minutes: int = 0,
     ) -> Dict[str, Any]:
         if target_date is None:
+            # Current date adjusted for client timezone offset
             target_date = datetime.now(timezone.utc).date()
 
-        # Date boundaries for the query
-        start_dt = datetime.combine(target_date, time.min)
-        end_dt = datetime.combine(target_date, time.max)
+        # Exact UTC bounds corresponding to client's local 24h calendar day
+        start_dt, end_dt = get_utc_bounds_for_local_date(target_date, tz_offset_minutes)
 
-        # Retrieve all user's meals logged for this target date
+        # Retrieve all user's meals logged for this target date range
         meals = (
             self.db.query(Meal)
             .filter(
@@ -40,7 +44,7 @@ class DailyTrackingService:
             .all()
         )
 
-        # Sum consumed nutrition
+        # Sum consumed nutrition deterministically
         consumed_calories = sum(m.total_calories for m in meals)
         consumed_protein = sum(m.total_protein for m in meals)
         consumed_carbs = sum(m.total_carbohydrates for m in meals)
@@ -80,13 +84,34 @@ class DailyTrackingService:
         fat_pct = round((consumed_fat / target_fat * 100), 1) if target_fat > 0 else 0.0
         fiber_pct = round((consumed_fiber / target_fib * 100), 1) if target_fib > 0 else 0.0
 
+        # Data completeness status
+        if len(meals) == 0:
+            data_completeness = "UNLOGGED"
+        elif len(meals) < 3:
+            data_completeness = "PARTIAL"
+        else:
+            data_completeness = "LOGGED"
+
+        # Organize meals into timeline
+        timeline: Dict[str, List[Dict[str, Any]]] = {
+            "breakfast": [],
+            "lunch": [],
+            "dinner": [],
+            "snack": [],
+        }
+
         formatted_meals = []
         for m in meals:
-            formatted_meals.append({
+            # Extract food names from joined items
+            food_names = [it.food_name for it in m.items if it.food_name]
+            time_str = format_local_time(m.created_at, tz_offset_minutes)
+
+            meal_dict = {
                 "id": m.id,
                 "meal_type": m.meal_type or "meal",
                 "image_url": m.image_url,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
+                "time_logged": time_str,
                 "calories": round(m.total_calories, 1),
                 "protein": round(m.total_protein, 1),
                 "carbohydrates": round(m.total_carbohydrates, 1),
@@ -94,7 +119,24 @@ class DailyTrackingService:
                 "fiber": round(m.total_fiber, 1),
                 "formatted_estimate": f"Estimated: ~{int(round(m.total_calories))} kcal (±{int(round(m.uncertainty_calories))} kcal)",
                 "item_count": len(m.items),
-            })
+                "food_names": food_names,
+                "parent_meal_id": m.parent_meal_id,
+                "is_optimized_version": bool(m.is_optimized_version),
+                "optimization_notes": m.optimization_notes,
+                "notes": m.notes,
+            }
+            formatted_meals.append(meal_dict)
+
+            # Map to timeline slot
+            cat = (m.meal_type or "lunch").lower().strip()
+            if cat in ("breakfast", "morning"):
+                timeline["breakfast"].append(meal_dict)
+            elif cat in ("lunch", "afternoon"):
+                timeline["lunch"].append(meal_dict)
+            elif cat in ("dinner", "evening"):
+                timeline["dinner"].append(meal_dict)
+            else:
+                timeline["snack"].append(meal_dict)
 
         return {
             "date": target_date.isoformat(),
@@ -136,4 +178,6 @@ class DailyTrackingService:
             },
             "meals": formatted_meals,
             "meal_count": len(meals),
+            "data_completeness": data_completeness,
+            "timeline": timeline,
         }

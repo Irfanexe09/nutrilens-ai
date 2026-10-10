@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -71,13 +72,29 @@ def get_meal(
 def list_meals(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
+    meal_type: Optional[str] = Query(None, description="Filter by meal type: breakfast, lunch, dinner, snack"),
+    date_filter: Optional[date] = Query(None, alias="date", description="Filter for specific local date"),
+    start_date: Optional[date] = Query(None, description="Start date for range filter"),
+    end_date: Optional[date] = Query(None, description="End date for range filter"),
+    is_optimized_version: Optional[bool] = Query(None, description="Filter optimized versions or original meals"),
+    tz_offset_minutes: int = Query(0, description="Client timezone offset in minutes"),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """List recorded meals with pagination, filtered by user if authenticated."""
+    """List recorded meals with pagination and history filters, isolated by user if authenticated."""
     service = MealService(db)
     user_id = current_user.id if current_user else None
-    meals, total = service.list_meals(skip=skip, limit=limit, user_id=user_id)
+    meals, total = service.list_meals(
+        skip=skip,
+        limit=limit,
+        user_id=user_id,
+        meal_type=meal_type,
+        target_date=date_filter,
+        start_date=start_date,
+        end_date=end_date,
+        is_optimized_version=is_optimized_version,
+        tz_offset_minutes=tz_offset_minutes,
+    )
     
     enriched_meals = []
     for m in meals:

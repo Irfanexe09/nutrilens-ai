@@ -29,7 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, health 
               <div className="flex items-center gap-2">
                 <span className="font-bold text-lg text-slate-900 tracking-tight">NutriLens</span>
                 <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Phase 4
+                  Phase 6
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 hidden sm:block">
@@ -59,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, health 
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
-              <span>Daily Targets</span>
+              <span>Dashboard & Analytics</span>
             </button>
             <button
               onClick={() => setActiveTab('profile')}

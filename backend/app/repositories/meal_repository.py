@@ -1,9 +1,13 @@
+from datetime import date
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+
 from app.models.meal import Meal
 from app.models.meal_item import MealItem
 from app.schemas.meal import MealCreate
 from app.nutrition.engine import MealNutritionSummary
+from app.analytics.date_utils import get_utc_bounds_for_local_date
 
 
 class MealRepository:
@@ -15,11 +19,38 @@ class MealRepository:
 
     @staticmethod
     def list_meals(
-        db: Session, skip: int = 0, limit: int = 20, user_id: Optional[str] = None
+        db: Session,
+        skip: int = 0,
+        limit: int = 20,
+        user_id: Optional[str] = None,
+        meal_type: Optional[str] = None,
+        target_date: Optional[date] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        is_optimized_version: Optional[bool] = None,
+        tz_offset_minutes: int = 0,
     ) -> Tuple[List[Meal], int]:
         query = db.query(Meal)
         if user_id is not None:
             query = query.filter(Meal.user_id == user_id)
+
+        if meal_type:
+            query = query.filter(func.lower(Meal.meal_type) == meal_type.lower().strip())
+
+        if target_date:
+            s_utc, e_utc = get_utc_bounds_for_local_date(target_date, tz_offset_minutes)
+            query = query.filter(Meal.created_at >= s_utc, Meal.created_at <= e_utc)
+        else:
+            if start_date:
+                s_utc, _ = get_utc_bounds_for_local_date(start_date, tz_offset_minutes)
+                query = query.filter(Meal.created_at >= s_utc)
+            if end_date:
+                _, e_utc = get_utc_bounds_for_local_date(end_date, tz_offset_minutes)
+                query = query.filter(Meal.created_at <= e_utc)
+
+        if is_optimized_version is not None:
+            query = query.filter(Meal.is_optimized_version.is_(is_optimized_version))
+
         total = query.count()
         meals = (
             query

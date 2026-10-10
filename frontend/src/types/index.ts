@@ -158,7 +158,10 @@ export interface Meal {
   confidence_level?: string;
   formatted_estimate?: string;
   notes?: string;
-  items: MealItem[];
+  parent_meal_id?: string | null;
+  is_optimized_version?: boolean;
+  optimization_notes?: string | null;
+  items?: MealItem[];
   created_at?: string;
 }
 
@@ -218,6 +221,26 @@ export interface ProfileWithTarget {
   targets: DailyNutritionTarget;
 }
 
+export interface DailyMealItem {
+  id: string;
+  meal_type: string;
+  image_url?: string;
+  created_at?: string;
+  time_logged?: string;
+  calories: number;
+  protein: number;
+  carbohydrates: number;
+  fat: number;
+  fiber: number;
+  formatted_estimate: string;
+  item_count: number;
+  food_names?: string[];
+  parent_meal_id?: string | null;
+  is_optimized_version?: boolean;
+  optimization_notes?: string | null;
+  notes?: string | null;
+}
+
 export interface DailyNutritionResponse {
   date: string;
   target: {
@@ -256,20 +279,76 @@ export interface DailyNutritionResponse {
     fat: number;
     fiber: number;
   };
-  meals: {
-    id: string;
-    meal_type: string;
-    image_url?: string;
-    created_at?: string;
-    calories: number;
-    protein: number;
-    carbohydrates: number;
-    fat: number;
-    fiber: number;
-    formatted_estimate: string;
-    item_count: number;
-  }[];
+  meals: DailyMealItem[];
   meal_count: number;
+  data_completeness?: 'UNLOGGED' | 'PARTIAL' | 'LOGGED';
+  timeline?: {
+    breakfast: DailyMealItem[];
+    lunch: DailyMealItem[];
+    dinner: DailyMealItem[];
+    snack: DailyMealItem[];
+  };
+}
+
+// Phase 6: Weekly Analytics & History Types
+export interface DayAnalyticsItem {
+  date: string;
+  day_name: string;
+  has_logs: boolean;
+  data_completeness: 'UNLOGGED' | 'PARTIAL' | 'LOGGED';
+  meal_count: number;
+  calories: number | null;
+  protein: number | null;
+  carbohydrates: number | null;
+  fat: number | null;
+  fiber: number | null;
+  calorie_target: number;
+  protein_target: number;
+  is_over_calorie_target: boolean;
+  overage_calories: number;
+  calorie_percentage: number;
+  protein_target_met: boolean;
+}
+
+export interface PeriodComparisonSummary {
+  has_comparison: boolean;
+  prev_period_logged_days: number;
+  prev_period_average_calories: number | null;
+  calorie_difference: number | null;
+  percent_change: number | null;
+  message: string | null;
+}
+
+export interface WeeklyTrendInsights {
+  logged_days_count: number;
+  total_days: number;
+  average_calories_logged_days: number | null;
+  average_protein_logged_days: number | null;
+  average_carbs_logged_days: number | null;
+  average_fat_logged_days: number | null;
+  average_fiber_logged_days: number | null;
+  protein_target_met_days: number;
+  highest_calorie_day: { date: string; calories: number } | null;
+  lowest_calorie_day: { date: string; calories: number } | null;
+  previous_period_comparison?: PeriodComparisonSummary | null;
+  insights_statements: string[];
+  disclaimer: string;
+}
+
+export interface WeeklyAnalyticsResponse {
+  start_date: string;
+  end_date: string;
+  days: DayAnalyticsItem[];
+  insights: WeeklyTrendInsights;
+}
+
+export interface MealFilterParams {
+  meal_type?: string;
+  date?: string;
+  start_date?: string;
+  end_date?: string;
+  is_optimized_version?: boolean;
+  tz_offset_minutes?: number;
 }
 
 export interface EvaluateMealResponse {
