@@ -1,21 +1,56 @@
-FROM python:3.12-slim
+# ==========================================
+# Multi-Stage Hardened Backend Dockerfile
+# ==========================================
 
-WORKDIR /app
+# Stage 1: Build dependencies and wheels
+FROM python:3.12-slim AS builder
 
-# Install system dependencies for Pillow and PostgreSQL
+WORKDIR /build
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-COPY . .
 
-# Ensure uploads directory exists
-RUN mkdir -p uploads
+# Stage 2: Minimal hardened production runtime
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Install runtime shared libraries and curl for container health check
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create unprivileged system user and group
+RUN groupadd -r -g 1001 appgroup && \
+    useradd -r -u 1001 -g appgroup -s /sbin/nologin -d /app appuser
+
+# Copy installed Python packages from builder stage
+COPY --from=builder /root/.local /home/appuser/.local
+
+# Ensure path includes user packages
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Copy application source code
+COPY --chown=appuser:appgroup . .
+
+# Create uploads directory and grant ownership to appuser
+RUN mkdir -p uploads && chown -R appuser:appgroup /app
+
+USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Container health probe verifying API readiness
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
