@@ -31,11 +31,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd -r -g 1001 appgroup && \
     useradd -r -u 1001 -g appgroup -s /sbin/nologin -d /app appuser
 
-# Copy installed Python packages from builder stage
-COPY --from=builder /root/.local /home/appuser/.local
+# Copy installed Python packages from builder stage with correct unprivileged ownership
+COPY --from=builder --chown=appuser:appgroup /root/.local /home/appuser/.local
 
-# Ensure path includes user packages
+# Ensure PATH and PYTHONPATH include unprivileged user packages
 ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/home/appuser/.local/lib/python3.12/site-packages:/app:$PYTHONPATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

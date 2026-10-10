@@ -55,7 +55,16 @@ class Settings(BaseSettings):
             return origins if origins else ["http://localhost:5173", "http://localhost:3000"]
         elif isinstance(v, list):
             return v
-        return ["http://localhost:5173", "http://localhost:3000"]
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_database_url(cls, v: str) -> str:
+        """
+        Normalize standard postgresql:// URLs to postgresql+psycopg2://
+        to guarantee compatibility with psycopg2-binary under SQLAlchemy 2.0.
+        """
+        if isinstance(v, str) and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+psycopg2://", 1)
+        return v
 
     @model_validator(mode="after")
     def validate_production_configuration(self) -> "Settings":

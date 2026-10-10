@@ -29,8 +29,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set database URL dynamically from app settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Set database URL dynamically from app settings or environment, normalizing to postgresql+psycopg2://
+raw_db_url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+effective_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1) if raw_db_url.startswith("postgresql://") else raw_db_url
+config.set_main_option("sqlalchemy.url", effective_db_url)
 
 target_metadata = Base.metadata
 
@@ -52,10 +54,12 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
+    raw_url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+    effective_url = raw_url.replace("postgresql://", "postgresql+psycopg2://", 1) if raw_url.startswith("postgresql://") else raw_url
+    configuration["sqlalchemy.url"] = effective_url
 
     connect_args = {}
-    if settings.DATABASE_URL.startswith("sqlite"):
+    if effective_url.startswith("sqlite"):
         connect_args = {"check_same_thread": False}
 
     connectable = engine_from_config(
