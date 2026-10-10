@@ -1,0 +1,35 @@
+# Git & CI/CD
+.git
+.github
+.gitignore
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Database files & SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads and temporary files
+uploads/*
+!uploads/.gitkeep
+*.log
+.DS_Store

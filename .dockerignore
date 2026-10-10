@@ -1,0 +1,32 @@
+# Git & CI/CD
+.git
+.github
+.gitignore
+
+# Environment files & Secrets
+.env
+.env.*
+!.env.example
+
+# Python cache & venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+backend/venv/
+backend/.venv/
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Node modules & build outputs
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Operating system files
+.DS_Store
+*.log
