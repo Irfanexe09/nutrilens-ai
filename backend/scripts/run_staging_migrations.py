@@ -31,10 +31,11 @@ def wait_for_database(engine, max_retries: int = 15, delay_seconds: float = 2.0)
     return False
 
 
-def run_migrations(alembic_ini_path: str):
+def run_migrations(alembic_ini_path: str, db_url: str):
     """Run Alembic upgrade head programmatically."""
     logger.info(f"Executing Alembic migrations using config: {alembic_ini_path}...")
     alembic_cfg = Config(alembic_ini_path)
+    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
     command.upgrade(alembic_cfg, "head")
     logger.info("Alembic schema migrations applied successfully.")
 
@@ -69,7 +70,7 @@ def main():
         sys.exit(1)
 
     try:
-        run_migrations(alembic_ini)
+        run_migrations(alembic_ini, settings.DATABASE_URL)
         seed_nutrition_database(engine)
         logger.info("Staging database initialization and migrations complete.")
     except Exception as e:

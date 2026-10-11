@@ -43,15 +43,15 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 # Copy application source code
 COPY --chown=appuser:appgroup . .
 
-# Create uploads directory and grant ownership to appuser
-RUN mkdir -p uploads && chown -R appuser:appgroup /app
+# Create uploads directory, make entrypoint executable, and grant ownership to appuser
+RUN mkdir -p uploads && chmod +x scripts/start.sh && chown -R appuser:appgroup /app
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8000 10000
 
-# Container health probe verifying API readiness
+# Container health probe verifying API readiness on dynamic PORT
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+    CMD sh -c 'curl -f http://localhost:${PORT:-8000}/api/health || exit 1'
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["scripts/start.sh"]

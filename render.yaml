@@ -14,9 +14,10 @@ services:
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
     plan: free
-    region: oregon
     healthCheckPath: /api/health
-    preDeployCommand: python scripts/run_staging_migrations.py
+    # Note: Render Free plans do not support preDeployCommand.
+    # Migrations execute safely on container startup via backend/scripts/start.sh
+    # before FastAPI accepts traffic.
     envVars:
       - key: ENVIRONMENT
         value: staging
