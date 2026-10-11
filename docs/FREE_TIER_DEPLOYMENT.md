@@ -57,14 +57,18 @@ To achieve a guaranteed **₹0 / month** initial hosting cost while preserving p
    - Fast global edge CDN serving the compiled React/Vite SPA.
    - Zero sleep latency: UI loads instantly for all visitors.
    - Configured via [`frontend/vercel.json`](file:///Users/irfan/Desktop/food%20app/frontend/vercel.json) with client-side SPA route rewrites.
+   - **Vercel Hobby Plan Terms Notice:** Vercel's free Hobby plan is strictly designated for personal, non-commercial projects. For commercial deployments, Vercel Terms of Service require upgrading to Vercel Pro ($20/month per member).
 2. **Backend:** Hosted on **Render** (Free Web Service).
    - Multi-stage Docker build from [`backend/Dockerfile`](file:///Users/irfan/Desktop/food%20app/backend/Dockerfile).
-   - Pre-deploy release hook runs [`run_staging_migrations.py`](file:///Users/irfan/Desktop/food%20app/backend/scripts/run_staging_migrations.py) to apply Alembic migrations before the new version accepts traffic.
+   - **Startup Migration Execution:** Because Render Free tier does not support `preDeployCommand` (which is exclusive to paid instances), migrations are executed on container startup via [`backend/scripts/start.sh`](file:///Users/irfan/Desktop/food%20app/backend/scripts/start.sh). The script runs [`run_staging_migrations.py`](file:///Users/irfan/Desktop/food%20app/backend/scripts/run_staging_migrations.py) with `set -e` before launching FastAPI uvicorn. If migrations fail, the container aborts and the deploy fails before receiving traffic.
+   - **Concurrency Note:** Startup migrations are safe and appropriate for single-instance staging and free-tier hobby setups. For multi-instance horizontal production clusters, migrations should be extracted into a separate one-off pre-deploy job or migration container to prevent concurrent migration race conditions.
+   - **Dynamic Port Binding:** Render dynamically assigns the listen port via the `$PORT` environment variable (defaults to port `10000` on Render). [`backend/scripts/start.sh`](file:///Users/irfan/Desktop/food%20app/backend/scripts/start.sh) binds to `--port "${PORT:-8000}"` on `0.0.0.0`, and the Dockerfile exposes both `8000` and `10000`.
    - Spin-down behavior: After 15 minutes of inactivity, the backend sleeps. The first incoming request triggers a ~45–60 second wake-up cycle.
 3. **Database:** Hosted on **Neon Serverless PostgreSQL**.
-   - Standard PostgreSQL 16 engine accessible over TLS.
+   - Standard PostgreSQL 16 engine accessible over TLS (`?sslmode=require`).
    - **Data never expires or deletes.**
    - Compute automatically scales to zero after 5 minutes of inactivity, waking up in ~500ms on first connection.
+   - Database connection pooling configured with `pool_recycle=300`, `pool_size=5`, and `max_overflow=10` to handle Neon serverless compute suspend gracefully without stale socket drops.
 
 ---
 
@@ -101,15 +105,15 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
    - Docker Context: `./backend`
    - Dockerfile Path: `./backend/Dockerfile`
    - Instance Type: **Free**
-4. Configure Pre-deploy Command:
-   ```bash
-   python scripts/run_staging_migrations.py
-   ```
+4. Migration Execution & Port Handling:
+   - Do **NOT** specify a `preDeployCommand` (not supported on Render Free plans).
+   - The container entrypoint `scripts/start.sh` automatically performs DB connectivity checks, applies Alembic migrations, and seeds the core Indian foods dataset before launching Uvicorn.
+   - Render automatically sets `$PORT` (typically `10000`); the container entrypoint listens on `0.0.0.0:${PORT:-8000}`.
 5. Configure Environment Variables:
    - `ENVIRONMENT`: `staging` (or `production`)
    - `DATABASE_URL`: `<your_neon_connection_string>`
    - `JWT_SECRET_KEY`: `<generated via: openssl rand -hex 32>`
-   - `CORS_ORIGINS`: `https://nutrilens.vercel.app` (your frontend domain)
+   - `CORS_ORIGINS`: `https://nutrilens.vercel.app` (your frontend domain, without trailing slash)
    - `AI_PROVIDER`: `gemini`
    - `GEMINI_API_KEY`: `<your_gemini_api_key_from_google_ai_studio>`
    - `RATE_LIMIT_ANALYZE_PER_MINUTE`: `15`
@@ -124,8 +128,10 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
    - Build Command: `npm run build`
    - Output Directory: `dist`
 4. Configure Environment Variables:
-   - `VITE_API_BASE_URL`: `https://nutrilens-backend.onrender.com/api`
-5. Click **Deploy**. Vercel will build and assign your domain (e.g., `https://nutrilens.vercel.app`).
+   - `VITE_API_BASE_URL`: `https://nutrilens-backend.onrender.com/api` (normalized automatically by `api.ts` if trailing slashes are included)
+5. Review Terms:
+   - Confirm project complies with Vercel Hobby terms (personal/non-commercial).
+6. Click **Deploy**. Vercel will build and assign your domain (e.g., `https://nutrilens.vercel.app`).
 
 ### Step 4: Final Verification
 1. Verify backend health probe:
