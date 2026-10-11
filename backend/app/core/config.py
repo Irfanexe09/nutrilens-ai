@@ -53,20 +53,25 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):
-            origins = [i.strip() for i in v.split(",") if i.strip()]
+            origins = [i.strip().rstrip("/") for i in v.split(",") if i.strip()]
             return origins if origins else ["http://localhost:5173", "http://localhost:3000"]
         elif isinstance(v, list):
-            return v
+            return [i.strip().rstrip("/") if isinstance(i, str) else i for i in v]
+        return v
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_database_url(cls, v: str) -> str:
         """
-        Normalize standard postgresql:// URLs to postgresql+psycopg2://
+        Normalize postgresql:// and legacy postgres:// URLs to postgresql+psycopg2://
         to guarantee compatibility with psycopg2-binary under SQLAlchemy 2.0.
+        Preserves all query parameters such as ?sslmode=require.
         """
-        if isinstance(v, str) and v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+psycopg2://", 1)
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                return v.replace("postgres://", "postgresql+psycopg2://", 1)
+            elif v.startswith("postgresql://"):
+                return v.replace("postgresql://", "postgresql+psycopg2://", 1)
         return v
 
     @model_validator(mode="after")

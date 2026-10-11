@@ -36,6 +36,21 @@ class FoodService:
 
     def seed_database(self, force_refresh: bool = False) -> int:
         """Finds seed file and populates initial items if empty or updates fields."""
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        seed_path = os.path.join(base_dir, "data", "nutrition", "indian_foods_seed.json")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths = [
+            # 1. Bundled inside backend/data (container runtime)
+            os.path.join(os.path.dirname(os.path.dirname(current_dir)), "data", "nutrition", "indian_foods_seed.json"),
+            # 2. Repo root data/nutrition (monorepo local development)
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))), "data", "nutrition", "indian_foods_seed.json"),
+            # 3. Standard container mount path
+            "/app/data/nutrition/indian_foods_seed.json",
+        ]
+        seed_path = None
+        for p in candidate_paths:
+            if os.path.exists(p):
+                seed_path = p
+                break
+
+        if not seed_path:
+            return 0
         return self.repo.seed_initial_foods(self.db, seed_path, force_refresh=force_refresh)

@@ -19,10 +19,20 @@ import {
 
 // Base API URL configuration.
 // Defaults to relative '/api' which is proxied by Nginx in Docker or Vite in local development.
-// In split-host deployments, VITE_API_BASE_URL can override this (e.g., https://api.nutrilens.app/api).
+// In split-host deployments (e.g. Vercel frontend + Render backend), VITE_API_BASE_URL can override this.
 // SECURITY NOTICE: All VITE_* environment variables are embedded into client-side JS bundles at build time
 // and are completely public. NEVER store private secrets, database keys, or server credentials in VITE_* vars.
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || '/api';
+function getNormalizedApiBase(): string {
+  let url = (import.meta.env.VITE_API_BASE_URL as string) || '/api';
+  url = url.trim().replace(/\/+$/, ''); // Strip whitespace and trailing slashes
+  // In split-host deployments with an absolute origin, ensure the /api path prefix is present
+  if ((url.startsWith('http://') || url.startsWith('https://')) && !url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url || '/api';
+}
+
+const API_BASE = getNormalizedApiBase();
 const TOKEN_KEY = 'nutrilens_auth_token';
 
 export class ApiError extends Error {
