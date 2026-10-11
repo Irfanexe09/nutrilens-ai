@@ -1,0 +1,89 @@
+# ========================================================
+# NutriLens — Staging Docker Compose Specification
+# ========================================================
+# Designed for staging deployments running against a managed
+# PostgreSQL database or isolated staging environment.
+#
+# Usage:
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+# ========================================================
+
+services:
+  # Database migration runner (runs before backend starts)
+  staging-migration:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nutrilens-staging-migration
+    restart: "no"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-staging}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in staging}
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    networks:
+      - nutrilens-staging-net
+
+  # Backend FastAPI application
+  staging-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nutrilens-staging-backend
+    restart: always
+    depends_on:
+      staging-migration:
+        condition: service_completed_successfully
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-staging}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in staging}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://staging.nutrilens.app}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required in staging}
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ALLOW_PLACEHOLDER_AI: ${ALLOW_PLACEHOLDER_AI:-false}
+      RATE_LIMIT_ANALYZE_PER_MINUTE: ${RATE_LIMIT_ANALYZE_PER_MINUTE:-15}
+      MAX_UPLOAD_SIZE_BYTES: ${MAX_UPLOAD_SIZE_BYTES:-10485760}
+    # Security: Direct backend port bound strictly to host loopback (127.0.0.1)
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - staging_uploads:/app/uploads
+      - ./data/nutrition:/app/data/nutrition:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - nutrilens-staging-net
+
+  # Frontend Nginx reverse proxy & static SPA
+  staging-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nutrilens-staging-frontend
+    restart: always
+    depends_on:
+      staging-backend:
+        condition: service_healthy
+    # Inbound traffic enters through Nginx reverse proxy
+    ports:
+      - "${STAGING_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - nutrilens-staging-net
+
+networks:
+  nutrilens-staging-net:
+    driver: bridge
+
+volumes:
+  staging_uploads:
