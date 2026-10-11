@@ -167,3 +167,24 @@ def test_staging_settings_enforces_hardened_security_guardrails():
     assert valid_staging.is_staging() is True
     assert valid_staging.is_hardened_environment() is True
     assert valid_staging.is_production() is False
+
+
+def test_database_url_normalization_handles_postgres_and_postgresql_with_query_params():
+    """Verify that assemble_database_url normalizes both postgres:// and postgresql:// while preserving params."""
+    # 1. postgresql:// with sslmode parameter (Neon style)
+    cfg1 = Settings(DATABASE_URL="postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=require")
+    assert cfg1.DATABASE_URL == "postgresql+psycopg2://user:pass@ep-test.neon.tech/neondb?sslmode=require"
+
+    # 2. legacy postgres:// URL (Heroku / legacy PaaS style)
+    cfg2 = Settings(DATABASE_URL="postgres://user:pass@host:5432/db")
+    assert cfg2.DATABASE_URL == "postgresql+psycopg2://user:pass@host:5432/db"
+
+    # 3. sqlite:// is untouched
+    cfg3 = Settings(DATABASE_URL="sqlite:///./test.db")
+    assert cfg3.DATABASE_URL == "sqlite:///./test.db"
+
+
+def test_cors_origins_normalization_strips_trailing_slashes():
+    """Verify that CORS origins strip trailing slashes to prevent browser CORS preflight mismatches."""
+    cfg = Settings(CORS_ORIGINS="https://nutrilens.vercel.app/, https://staging.nutrilens.app///")
+    assert cfg.CORS_ORIGINS == ["https://nutrilens.vercel.app", "https://staging.nutrilens.app"]
