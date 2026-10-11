@@ -72,10 +72,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_configuration(self) -> "Settings":
         """
-        Enforce strict security guardrails when ENVIRONMENT is 'production'.
-        Guarantees that default development secrets and passwords cannot leak into production.
+        Enforce strict security guardrails when ENVIRONMENT is 'production' or 'staging'.
+        Guarantees that default development secrets and passwords cannot leak into staging/production.
         """
-        if self.is_production():
+        env_label = self.ENVIRONMENT.lower()
+        if self.is_hardened_environment():
             insecure_secret_fallbacks = {
                 "nutrilens-secret-key-super-secure-change-in-production",
                 "nutrilens-secret-key-change-in-production",
@@ -86,28 +87,28 @@ class Settings(BaseSettings):
             # 1. JWT Secret Validation
             if not self.JWT_SECRET_KEY or self.JWT_SECRET_KEY.strip() in insecure_secret_fallbacks:
                 raise ValueError(
-                    "Production configuration error: JWT_SECRET_KEY must be explicitly set to a strong, "
+                    f"{env_label.capitalize()} configuration error: JWT_SECRET_KEY must be explicitly set to a strong, "
                     "cryptographically random secret (e.g. generated via 'openssl rand -hex 32'). "
-                    "Using default or empty keys in production is forbidden."
+                    f"Using default or empty keys in {env_label} is forbidden."
                 )
             if len(self.JWT_SECRET_KEY.strip()) < 32:
                 raise ValueError(
-                    "Production configuration error: JWT_SECRET_KEY must be at least 32 characters long."
+                    f"{env_label.capitalize()} configuration error: JWT_SECRET_KEY must be at least 32 characters long."
                 )
 
             # 2. Database Password Validation
             if "nutrilens_password" in self.DATABASE_URL:
                 raise ValueError(
-                    "Production configuration error: DATABASE_URL contains default development password "
-                    "'nutrilens_password'. Please provide a secure, unique database password in production."
+                    f"{env_label.capitalize()} configuration error: DATABASE_URL contains default development password "
+                    f"'nutrilens_password'. Please provide a secure, unique database password in {env_label}."
                 )
 
-            # 3. AI Provider and API Key Guardrails in Production
+            # 3. AI Provider and API Key Guardrails in Hardened Environments
             if self.AI_PROVIDER.lower() == "placeholder" and not self.ALLOW_PLACEHOLDER_AI:
                 raise ValueError(
-                    "Production configuration error: AI_PROVIDER cannot be 'placeholder' in production. "
+                    f"{env_label.capitalize()} configuration error: AI_PROVIDER cannot be 'placeholder' in {env_label}. "
                     "NutriLens requires real multimodal AI integration (AI_PROVIDER=gemini) with a valid GEMINI_API_KEY. "
-                    "If intentionally running placeholder mode for non-live staging tests, explicitly set ALLOW_PLACEHOLDER_AI=True."
+                    f"If intentionally running placeholder mode for non-live {env_label} tests, explicitly set ALLOW_PLACEHOLDER_AI=True."
                 )
 
             if self.GEMINI_API_KEY:
@@ -120,13 +121,19 @@ class Settings(BaseSettings):
                 }
                 if self.GEMINI_API_KEY.strip().lower() in insecure_gemini_keys:
                     raise ValueError(
-                        "Production configuration error: GEMINI_API_KEY contains an unconfigured placeholder value. "
+                        f"{env_label.capitalize()} configuration error: GEMINI_API_KEY contains an unconfigured placeholder value. "
                         "Please provide a genuine Gemini API key from Google AI Studio."
                     )
         return self
 
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
+
+    def is_staging(self) -> bool:
+        return self.ENVIRONMENT.lower() == "staging"
+
+    def is_hardened_environment(self) -> bool:
+        return self.ENVIRONMENT.lower() in {"production", "staging"}
 
     model_config = SettingsConfigDict(
         env_file=".env",

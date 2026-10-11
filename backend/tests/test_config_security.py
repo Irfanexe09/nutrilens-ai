@@ -135,3 +135,35 @@ def test_health_endpoint_reports_ai_provider_and_status(client: TestClient):
     assert "ai_status" in data
     assert "ai_configured" in data
     assert isinstance(data["ai_configured"], bool)
+
+
+def test_staging_settings_enforces_hardened_security_guardrails():
+    """Verify that ENVIRONMENT=staging enforces strong JWT secret and DB password."""
+    # 1. Staging rejects default JWT secret
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            ENVIRONMENT="staging",
+            JWT_SECRET_KEY="nutrilens-secret-key-change-in-production",
+            DATABASE_URL="postgresql://staging_user:strong_pass_12345@db:5432/staging_db",
+        )
+    assert "JWT_SECRET_KEY must be explicitly set" in str(exc_info.value)
+
+    # 2. Staging rejects default database password
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            ENVIRONMENT="staging",
+            JWT_SECRET_KEY="b" * 32,
+            DATABASE_URL="postgresql://staging_user:nutrilens_password@db:5432/staging_db",
+        )
+    assert "contains default development password" in str(exc_info.value)
+
+    # 3. Staging accepts strong secrets
+    valid_staging = Settings(
+        ENVIRONMENT="staging",
+        JWT_SECRET_KEY="b" * 32,
+        DATABASE_URL="postgresql://staging_user:strong_pass_12345@db:5432/staging_db",
+        ALLOW_PLACEHOLDER_AI=True,
+    )
+    assert valid_staging.is_staging() is True
+    assert valid_staging.is_hardened_environment() is True
+    assert valid_staging.is_production() is False
