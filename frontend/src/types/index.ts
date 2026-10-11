@@ -4,6 +4,8 @@ export interface HealthStatus {
   version: string;
   database: string;
   ai_provider: string;
+  ai_status?: string;
+  ai_configured?: boolean;
   timestamp: string;
 }
 

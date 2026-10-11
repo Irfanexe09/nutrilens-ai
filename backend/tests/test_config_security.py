@@ -78,6 +78,44 @@ def test_analyze_with_gemini_missing_key_returns_503(client: TestClient, sample_
         settings.GEMINI_API_KEY = orig_key
 
 
+def test_production_settings_rejects_placeholder_ai_by_default():
+    """Verify that Settings fails safely if AI_PROVIDER is placeholder in production without explicit override."""
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            ENVIRONMENT="production",
+            JWT_SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql://prod_user:strong_prod_pass_12345@db:5432/prod_db",
+            AI_PROVIDER="placeholder",
+            ALLOW_PLACEHOLDER_AI=False,
+        )
+    assert "AI_PROVIDER cannot be 'placeholder' in production" in str(exc_info.value)
+
+
+def test_production_settings_accepts_placeholder_ai_with_explicit_override():
+    """Verify that Settings permits placeholder AI in production if ALLOW_PLACEHOLDER_AI is True."""
+    cfg = Settings(
+        ENVIRONMENT="production",
+        JWT_SECRET_KEY="a" * 32,
+        DATABASE_URL="postgresql://prod_user:strong_prod_pass_12345@db:5432/prod_db",
+        AI_PROVIDER="placeholder",
+        ALLOW_PLACEHOLDER_AI=True,
+    )
+    assert cfg.AI_PROVIDER == "placeholder"
+    assert cfg.ALLOW_PLACEHOLDER_AI is True
+
+
+def test_production_settings_rejects_placeholder_gemini_api_key():
+    """Verify that Settings fails if GEMINI_API_KEY is an unconfigured template string in production."""
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            ENVIRONMENT="production",
+            JWT_SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql://prod_user:strong_prod_pass_12345@db:5432/prod_db",
+            GEMINI_API_KEY="your_gemini_api_key_here",
+        )
+    assert "GEMINI_API_KEY contains an unconfigured placeholder value" in str(exc_info.value)
+
+
 def test_health_endpoint_does_not_leak_secrets(client: TestClient):
     """Verify that health check endpoint returns telemetry without leaking any secrets."""
     response = client.get("/api/health")
@@ -86,3 +124,14 @@ def test_health_endpoint_does_not_leak_secrets(client: TestClient):
     assert "jwt_secret_key" not in text_content
     assert "gemini_api_key" not in text_content
     assert "password" not in text_content
+
+
+def test_health_endpoint_reports_ai_provider_and_status(client: TestClient):
+    """Verify that health endpoint reports ai_provider, ai_status, and ai_configured accurately."""
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert "ai_provider" in data
+    assert "ai_status" in data
+    assert "ai_configured" in data
+    assert isinstance(data["ai_configured"], bool)

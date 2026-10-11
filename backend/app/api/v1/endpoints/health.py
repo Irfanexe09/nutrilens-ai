@@ -41,6 +41,36 @@ def get_health_status(response: Response, db: Session = Depends(get_db)):
     if not is_healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
+    # Assess AI vision provider configuration state
+    provider_lower = (settings.AI_PROVIDER or "").lower().strip()
+    ai_status = "ready"
+    ai_configured = True
+
+    if provider_lower == "gemini":
+        has_key = bool(
+            settings.GEMINI_API_KEY
+            and settings.GEMINI_API_KEY.strip()
+            not in {
+                "",
+                "your_gemini_api_key_here",
+                "your_gemini_api_key_from_google_ai_studio_here",
+                "placeholder",
+                "changeme",
+            }
+        )
+        if has_key:
+            ai_status = "ready"
+            ai_configured = True
+        else:
+            ai_status = "unconfigured"
+            ai_configured = False
+    elif provider_lower == "placeholder":
+        ai_status = "mock_mode"
+        ai_configured = True
+    else:
+        ai_status = "unknown"
+        ai_configured = False
+
     return HealthResponse(
         status=overall_status,
         app=settings.APP_NAME,
@@ -50,5 +80,7 @@ def get_health_status(response: Response, db: Session = Depends(get_db)):
         database_latency_ms=db_latency_ms,
         storage=storage_status,
         ai_provider=settings.AI_PROVIDER,
+        ai_status=ai_status,
+        ai_configured=ai_configured,
         timestamp=datetime.now(timezone.utc),
     )

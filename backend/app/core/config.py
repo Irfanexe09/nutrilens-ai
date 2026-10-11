@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_ANALYZE_PER_MINUTE: int = 15
 
+    ALLOW_PLACEHOLDER_AI: bool = False
+
     # AI Configuration (Phase 2: Gemini multimodal vision model)
     AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
     GEMINI_API_KEY: Optional[str] = None
@@ -55,6 +57,7 @@ class Settings(BaseSettings):
             return origins if origins else ["http://localhost:5173", "http://localhost:3000"]
         elif isinstance(v, list):
             return v
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_database_url(cls, v: str) -> str:
@@ -98,6 +101,28 @@ class Settings(BaseSettings):
                     "Production configuration error: DATABASE_URL contains default development password "
                     "'nutrilens_password'. Please provide a secure, unique database password in production."
                 )
+
+            # 3. AI Provider and API Key Guardrails in Production
+            if self.AI_PROVIDER.lower() == "placeholder" and not self.ALLOW_PLACEHOLDER_AI:
+                raise ValueError(
+                    "Production configuration error: AI_PROVIDER cannot be 'placeholder' in production. "
+                    "NutriLens requires real multimodal AI integration (AI_PROVIDER=gemini) with a valid GEMINI_API_KEY. "
+                    "If intentionally running placeholder mode for non-live staging tests, explicitly set ALLOW_PLACEHOLDER_AI=True."
+                )
+
+            if self.GEMINI_API_KEY:
+                insecure_gemini_keys = {
+                    "your_gemini_api_key_here",
+                    "your_gemini_api_key_from_google_ai_studio_here",
+                    "placeholder",
+                    "changeme",
+                    "your-gemini-api-key",
+                }
+                if self.GEMINI_API_KEY.strip().lower() in insecure_gemini_keys:
+                    raise ValueError(
+                        "Production configuration error: GEMINI_API_KEY contains an unconfigured placeholder value. "
+                        "Please provide a genuine Gemini API key from Google AI Studio."
+                    )
         return self
 
     def is_production(self) -> bool:

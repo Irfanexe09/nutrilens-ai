@@ -12,4 +12,6 @@ class HealthResponse(BaseModel):
     database_latency_ms: Optional[float] = Field(None, json_schema_extra={"example": 1.45})
     storage: str = Field("ready", json_schema_extra={"example": "ready"})
     ai_provider: str = Field(..., json_schema_extra={"example": "gemini"})
+    ai_status: str = Field("ready", json_schema_extra={"example": "ready"})
+    ai_configured: bool = Field(True, json_schema_extra={"example": True})
     timestamp: datetime
