@@ -57,7 +57,12 @@ Create a production `.env` file on the deployment host. **Never commit real cred
 When `ENVIRONMENT=production`, NutriLens enforces automated security guardrails on startup:
 1. **JWT Secret Strength**: `JWT_SECRET_KEY` must be explicitly defined and at least 32 characters long. Using default fallbacks (`nutrilens-secret-key-change-in-production`, `secret`, `changeme`) triggers an immediate fatal startup error. Generate with `openssl rand -hex 32`.
 2. **Database Password**: `DATABASE_URL` cannot contain the default development password (`nutrilens_password`).
-3. **Port Isolation**: In `docker-compose.yml`, direct host bindings for PostgreSQL (`5432`) and backend FastAPI (`8000`) are restricted strictly to the host loopback interface (`127.0.0.1`). External incoming web traffic must ingress via the Nginx frontend reverse proxy (`${FRONTEND_PORT:-5173}`).
+3. **AI Provider Guardrails**: `AI_PROVIDER` must be set to `gemini` in production. Placeholder mode is rejected by default to prevent mock data from silently being served in production. If intentionally operating in mock mode for non-live staging environments, operators must explicitly set `ALLOW_PLACEHOLDER_AI=true`.
+4. **Gemini Key Placeholder Check**: `GEMINI_API_KEY` cannot contain template placeholder values (e.g. `your_gemini_api_key_here`).
+5. **Missing Gemini Key Handling**: If `GEMINI_API_KEY` is not configured at startup, the service boots normally to allow migrations, authentication, profile management, and history browsing, but:
+   - `/api/health` transparently reports `ai_configured: false` and `ai_status: "unconfigured"`.
+   - Any food image analysis request via `/api/analyze` immediately returns `HTTP 503 Service Unavailable` with a clear explanation rather than fabricating mock data.
+6. **Port Isolation**: In `docker-compose.yml`, direct host bindings for PostgreSQL (`5432`) and backend FastAPI (`8000`) are restricted strictly to the host loopback interface (`127.0.0.1`). External incoming web traffic must ingress via the Nginx frontend reverse proxy (`${FRONTEND_PORT:-5173}`).
 
 ---
 
@@ -167,4 +172,81 @@ For production deployments at scale, the following enterprise infrastructure com
 | **Container Orchestration** | Docker Compose on single VM | Managed Container Service (Kubernetes / AWS ECS / Google Cloud Run) with horizontal pod autoscaling |
 | **TLS & Routing** | Reverse proxy on port 80 | TLS Termination via Cloud Load Balancer (AWS ALB / Cloudflare) with automated SSL certificates |
 | **Telemetry & Observability** | In-process `/api/health` probe & console logs | Distributed Tracing & Metrics (OpenTelemetry, Prometheus, Grafana, Datadog) |
+
+---
+
+## 7. Database Disaster Recovery Runbook
+
+### 7.1 Creating a Consistent Database Backup
+Run `pg_dump` against the running database container. In production, execute this before running migrations or deploys:
+```bash
+# Dump custom binary format with compression (recommended):
+docker compose exec -t db pg_dump -U ${POSTGRES_USER:-nutrilens_user} -d ${POSTGRES_DB:-nutrilens_db} -Fc > nutrilens_backup_$(date +%Y%m%d_%H%M%S).dump
+
+# Or plain SQL format for inspection:
+docker compose exec -t db pg_dump -U ${POSTGRES_USER:-nutrilens_user} -d ${POSTGRES_DB:-nutrilens_db} > nutrilens_backup_$(date +%Y%m%d_%H%M%S).sql
+```
+
+### 7.2 Restoring from Backup
+To restore a snapshot into a new or existing database container:
+```bash
+# Stop application traffic during restore:
+docker compose stop backend frontend
+
+# Restore custom format dump:
+docker compose exec -T db pg_restore -U ${POSTGRES_USER:-nutrilens_user} -d ${POSTGRES_DB:-nutrilens_db} --clean --if-exists < nutrilens_backup.dump
+
+# Or restore plain SQL dump:
+docker compose exec -T db psql -U ${POSTGRES_USER:-nutrilens_user} -d ${POSTGRES_DB:-nutrilens_db} < nutrilens_backup.sql
+
+# Verify schema and migration state after restore:
+docker compose run --rm backend alembic current
+
+# Restart application services:
+docker compose start backend frontend
+```
+
+### 7.3 Data Segregation: Disposable Test Data vs Persistent Data
+- **Test / Verification Accounts**: Accounts created during automated testing or CI runs (e.g. `runtime_tester@nutrilens.app`) are ephemeral and run against isolated temporary containers or SQLite `:memory:`.
+- **Customer Production Accounts**: Stored in persistent volume `postgres_data`. When updating or deploying containers, use `docker compose down` (NEVER `docker compose down -v` in production) to preserve customer history and profiles.
+
+---
+
+## 8. Secret Rotation Runbook
+
+### 8.1 Rotating `JWT_SECRET_KEY`
+- Generate new secret: `NEW_SECRET=$(openssl rand -hex 32)`
+- Update `JWT_SECRET_KEY` in production `.env` or cloud secret manager.
+- Re-deploy or restart backend: `docker compose up -d backend`
+- *Impact*: Active user JWT tokens issued under the prior key become invalid; users will be required to re-authenticate via `/api/auth/login`.
+
+### 8.2 Rotating `GEMINI_API_KEY`
+- Obtain new API key from Google AI Studio.
+- Update `GEMINI_API_KEY` in production `.env`.
+- Re-deploy or restart backend: `docker compose up -d backend`
+- *Impact*: Zero downtime. Real multimodal image analysis continues uninterrupted.
+
+### 8.3 Rotating Database Password
+- Update password in PostgreSQL via SQL: `ALTER USER nutrilens_user WITH PASSWORD 'new_strong_password';`
+- Update `POSTGRES_PASSWORD` and `DATABASE_URL` in `.env`.
+- Re-deploy stack: `docker compose up -d`
+- *Impact*: Brief restart of backend and db connection pool.
+
+---
+
+## 9. Pre-Deployment Cloud Readiness Audit Checklist
+
+Before pointing production DNS or opening public traffic, verify each check:
+
+- [ ] **1. Secrets Hygiene**: Verified that `JWT_SECRET_KEY` is >=32 chars and random (`openssl rand -hex 32`). No default fallbacks.
+- [ ] **2. Database Credentials**: Unique, non-default username and password configured for PostgreSQL.
+- [ ] **3. AI Provider Configuration**: `AI_PROVIDER=gemini` and valid `GEMINI_API_KEY` set. `/api/health` reports `ai_configured: true` and `ai_status: "ready"`.
+- [ ] **4. Port Isolation**: Host loopback bindings (`127.0.0.1`) verified for PostgreSQL (5432) and backend (8000). Direct DB access from the internet is blocked.
+- [ ] **5. Ingress & TLS Termination**: Frontend Nginx (or cloud load balancer) configured with valid SSL/TLS certificates and HTTPS redirection.
+- [ ] **6. CORS Allowlist**: `CORS_ORIGINS` restricted to verified production frontend domains (no `*` wildcards).
+- [ ] **7. Database Migrations**: `alembic current` confirms schema matches `head`. Automated backup snapshot created before release.
+- [ ] **8. Upload Security**: File size limit (10MB), Pillow decompression bomb protection (25MP), and transient cleanup (24h retention) active.
+- [ ] **9. Rate Limiting**: In-memory sliding window rate limiter protects `/api/analyze` against excessive AI consumption (15 req/min/IP).
+- [ ] **10. User Isolation Verified**: Automated regression tests pass, guaranteeing cross-user profile, target, and meal history separation.
+
 
