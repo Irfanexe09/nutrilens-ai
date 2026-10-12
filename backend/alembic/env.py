@@ -25,9 +25,9 @@ from app.models import (
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
+# Interpret the config file for Python logging without disabling active application loggers.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Set database URL dynamically, prioritizing explicit config option over environment/settings
 raw_opt = config.get_main_option("sqlalchemy.url")
@@ -42,7 +42,8 @@ elif raw_db_url.startswith("postgresql://"):
     effective_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 else:
     effective_db_url = raw_db_url
-config.set_main_option("sqlalchemy.url", effective_db_url)
+# Escape % to %% for configparser interpolation safety
+config.set_main_option("sqlalchemy.url", effective_db_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 

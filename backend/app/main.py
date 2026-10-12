@@ -31,8 +31,11 @@ async def lifespan(app: FastAPI):
     # Startup: Ensure tables exist and seed database if empty
     logger.info(f"Starting NutriLens in '{settings.ENVIRONMENT}' mode (debug={settings.DEBUG})")
     logger.info(f"Configured allowed CORS origins: {settings.CORS_ORIGINS}")
-    logger.info("Initializing database schema...")
-    Base.metadata.create_all(bind=engine)
+    if not settings.is_hardened_environment():
+        logger.info("Initializing database schema...")
+        Base.metadata.create_all(bind=engine)
+    else:
+        logger.info("Running in hardened environment; database schema is managed via Alembic migrations.")
     
     # Prune stale transient food image uploads on startup
     try:

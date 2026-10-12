@@ -18,12 +18,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = [col['name'] for col in inspector.get_columns('users')]
+    existing_indexes = [idx['name'] for idx in inspector.get_indexes('users')]
+
     with op.batch_alter_table('users', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('firebase_uid', sa.String(length=128), nullable=True))
-        batch_op.create_index('ix_users_firebase_uid', ['firebase_uid'], unique=True)
+        if 'firebase_uid' not in existing_columns:
+            batch_op.add_column(sa.Column('firebase_uid', sa.String(length=128), nullable=True))
+        if 'ix_users_firebase_uid' not in existing_indexes:
+            batch_op.create_index('ix_users_firebase_uid', ['firebase_uid'], unique=True)
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = [col['name'] for col in inspector.get_columns('users')]
+    existing_indexes = [idx['name'] for idx in inspector.get_indexes('users')]
+
     with op.batch_alter_table('users', schema=None) as batch_op:
-        batch_op.drop_index('ix_users_firebase_uid')
-        batch_op.drop_column('firebase_uid')
+        if 'ix_users_firebase_uid' in existing_indexes:
+            batch_op.drop_index('ix_users_firebase_uid')
+        if 'firebase_uid' in existing_columns:
+            batch_op.drop_column('firebase_uid')
