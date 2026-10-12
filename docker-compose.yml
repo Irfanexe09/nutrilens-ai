@@ -54,6 +54,7 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ALLOW_PLACEHOLDER_AI: ${ALLOW_PLACEHOLDER_AI:-false}
       RATE_LIMIT_ANALYZE_PER_MINUTE: ${RATE_LIMIT_ANALYZE_PER_MINUTE:-15}
     # Security: External web traffic must enter via Nginx reverse proxy on frontend service.
     # Backend direct port is bound strictly to host loopback (127.0.0.1) for local inspection/OpenAPI docs.
