@@ -29,6 +29,7 @@ logger = logging.getLogger("nutrilens")
 async def lifespan(app: FastAPI):
     # Startup: Ensure tables exist and seed database if empty
     logger.info(f"Starting NutriLens in '{settings.ENVIRONMENT}' mode (debug={settings.DEBUG})")
+    logger.info(f"Configured allowed CORS origins: {settings.CORS_ORIGINS}")
     logger.info("Initializing database schema...")
     Base.metadata.create_all(bind=engine)
     
@@ -69,7 +70,7 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else ["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -99,10 +100,17 @@ def root():
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled server error on {request.method} {request.url.path}: {exc}", exc_info=True)
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "detail": "An unexpected internal server error occurred. Please try again later.",
             "path": request.url.path,
         },
     )
+    # Ensure CORS headers are preserved even on unhandled 500 exceptions
+    origin = request.headers.get("origin")
+    if origin and (origin in settings.CORS_ORIGINS or "*" in settings.CORS_ORIGINS):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response

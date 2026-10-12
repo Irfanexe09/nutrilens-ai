@@ -1,5 +1,9 @@
 import os
-from typing import List, Union, Optional
+import re
+import json
+import ast
+from urllib.parse import urlparse, urlunparse
+from typing import List, Union, Optional, Any
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,7 +26,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./nutrilens.db"
 
     # CORS
-    CORS_ORIGINS: Union[str, List[str]] = [
+    CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
@@ -49,15 +53,68 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     AI_TIMEOUT_SECONDS: float = 25.0
 
-    @field_validator("CORS_ORIGINS", mode="before")
+    @staticmethod
+    def _clean_single_origin(origin: Any) -> str:
+        """
+        Clean, unquote, and normalize an individual CORS origin string.
+        Strips surrounding single/double quotes, trailing slashes, and whitespace.
+        Normalizes HTTP scheme and hostname to lowercase while preserving port numbers.
+        """
+        if not isinstance(origin, str):
+            return ""
+        cleaned = origin.strip().strip("\"'").rstrip("/").strip("\"'")
+        if not cleaned:
+            return ""
+        try:
+            parsed = urlparse(cleaned)
+            if parsed.scheme and parsed.netloc:
+                netloc = parsed.netloc.lower()
+                cleaned = urlunparse((parsed.scheme.lower(), netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)).rstrip("/")
+        except Exception:
+            pass
+        return cleaned
+
+    @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str) and not v.startswith("["):
-            origins = [i.strip().rstrip("/") for i in v.split(",") if i.strip()]
-            return origins if origins else ["http://localhost:5173", "http://localhost:3000"]
+    def assemble_cors_origins(cls, v: Union[str, List[Any], None]) -> List[str]:
+        """
+        Assemble and sanitize CORS origins from environment variables or config files.
+        Accepts comma/semicolon/newline-delimited strings, JSON array strings,
+        single-quoted Python lists, or Python lists.
+        Always returns a canonical List[str] with normalized origins (no trailing slashes, no quotes).
+        """
+        defaults = [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+        ]
+        if not v:
+            return defaults
+
+        if isinstance(v, str):
+            v_str = v.strip()
+            # Handle JSON array string or Python list string e.g. ["https://..."] or ['https://...']
+            if v_str.startswith("[") and v_str.endswith("]"):
+                for parser in (json.loads, ast.literal_eval):
+                    try:
+                        parsed = parser(v_str)
+                        if isinstance(parsed, list):
+                            res = [cls._clean_single_origin(x) for x in parsed if cls._clean_single_origin(x)]
+                            if res:
+                                return res
+                    except Exception:
+                        pass
+
+            # Comma, semicolon, or newline separated strings
+            raw_items = re.split(r"[,;\n\r]+", v_str)
+            res = [cls._clean_single_origin(x) for x in raw_items if cls._clean_single_origin(x)]
+            return res if res else defaults
+
         elif isinstance(v, list):
-            return [i.strip().rstrip("/") if isinstance(i, str) else i for i in v]
-        return v
+            res = [cls._clean_single_origin(x) for x in v if cls._clean_single_origin(x)]
+            return res if res else defaults
+
+        return defaults
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
@@ -135,6 +192,13 @@ class Settings(BaseSettings):
                         f"{env_label.capitalize()} configuration error: GEMINI_API_KEY contains an unconfigured placeholder value. "
                         "Please provide a genuine Gemini API key from Google AI Studio."
                     )
+
+            # 4. CORS Origins Guardrails in Hardened Environments
+            if "*" in self.CORS_ORIGINS:
+                raise ValueError(
+                    f"{env_label.capitalize()} configuration error: CORS_ORIGINS cannot contain wildcard '*' "
+                    "when credentials are enabled. Explicit origins (e.g. your Vercel frontend URL) must be specified."
+                )
         return self
 
     def is_production(self) -> bool:

@@ -113,7 +113,7 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
    - `ENVIRONMENT`: `staging` (or `production`)
    - `DATABASE_URL`: `<your_neon_connection_string>`
    - `JWT_SECRET_KEY`: `<generated via: openssl rand -hex 32>`
-   - `CORS_ORIGINS`: `https://nutrilens.vercel.app` (your frontend domain, without trailing slash)
+   - `CORS_ORIGINS`: `https://nutrilens-ai-silk.vercel.app` (your frontend domain, without trailing slash; comma-separated for multiple)
    - `AI_PROVIDER`: `gemini`
    - `GEMINI_API_KEY`: `<your_gemini_api_key_from_google_ai_studio>`
    - `RATE_LIMIT_ANALYZE_PER_MINUTE`: `15`
