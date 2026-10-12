@@ -154,34 +154,46 @@ class AnalysisService:
 
         try:
             ai_result = await provider.analyze_food_image(
-                image_bytes=content, filename=filename
+                image_bytes=content, filename=filename, session_id=session_id
             )
         except AIProviderConfigError as e:
-            logger.error(f"AI provider configuration error in session {session_id}: {e}")
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.error(f"[session={session_id}] AI provider configuration error after {elapsed_ms}ms: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=str(e),
             )
         except AIProviderUnavailableError as e:
-            logger.warning(f"AI vision service temporarily unavailable in session {session_id}: {e}")
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.warning(f"[session={session_id}] AI vision model capacity/overload after {elapsed_ms}ms: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=str(e) or "The AI vision service is currently experiencing high demand. Please try again in a few moments.",
             )
         except AIProviderTimeoutError as e:
-            logger.error(f"AI analysis timed out in session {session_id}: {e}")
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.error(f"[session={session_id}] AI analysis timed out after {elapsed_ms}ms: {e}")
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Food analysis timed out. The multimodal vision model took too long to respond. Please try again.",
+                detail="Food analysis timed out. The multimodal vision model took too long to respond. Please try again in a few moments.",
             )
-        except (AIProviderResponseError, AIProviderError) as e:
-            logger.error(f"AI analysis failed in session {session_id}: {e}")
+        except AIProviderResponseError as e:
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.error(f"[session={session_id}] AI vision returned malformed response after {elapsed_ms}ms: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Food analysis failed: could not parse the vision model response. Please try with another image.",
+            )
+        except AIProviderError as e:
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.error(f"[session={session_id}] AI analysis failed after {elapsed_ms}ms: {e}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Food analysis failed. The vision service could not process this image. Please try again.",
             )
         except Exception as e:
-            logger.error(f"Unexpected error during AI analysis in session {session_id}: {e}")
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.error(f"[session={session_id}] Unexpected error during AI analysis after {elapsed_ms}ms: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred during food image analysis. Please try again.",

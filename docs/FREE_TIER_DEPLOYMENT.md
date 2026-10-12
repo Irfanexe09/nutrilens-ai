@@ -118,6 +118,8 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
    - `GEMINI_MODEL`: `gemini-3.8-flash`
    - `GEMINI_FALLBACK_MODEL`: `gemini-2.0-flash`
    - `GEMINI_API_KEY`: `<your_gemini_api_key_from_google_ai_studio>`
+   - `AI_TIMEOUT_SECONDS`: `30.0` (overall operation deadline)
+   - `AI_PER_ATTEMPT_TIMEOUT_SECONDS`: `12.0` (per-call timeout budget)
    - `RATE_LIMIT_ANALYZE_PER_MINUTE`: `15`
 6. Click **Create Web Service**. Note the assigned URL: `https://nutrilens-backend.onrender.com`.
 

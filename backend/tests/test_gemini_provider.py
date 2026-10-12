@@ -590,3 +590,178 @@ async def test_analyze_endpoint_returns_503_on_transient_high_demand(monkeypatch
     finally:
         analysis_rate_limiter.reset()
 
+
+def test_gemini_provider_configures_low_thinking_level_for_gemini_3():
+    """Verify that Gemini 3.x models receive thinking_level='low' while Gemini 2.x models omit it."""
+    provider = GeminiVisionAIProvider(api_key="test_key")
+
+    cfg_38 = provider._build_content_config("gemini-3.8-flash")
+    assert cfg_38.thinking_config is not None
+    assert str(cfg_38.thinking_config.thinking_level).upper() in ("LOW", "THINKINGLEVEL.LOW")
+
+    cfg_20 = provider._build_content_config("gemini-2.0-flash")
+    assert cfg_20.thinking_config is None
+
+
+def test_gemini_provider_extracts_retry_after_header():
+    """Verify that _extract_retry_after extracts Retry-After from response headers."""
+    provider = GeminiVisionAIProvider(api_key="test_key")
+
+    mock_resp = MagicMock()
+    mock_resp.headers = {"Retry-After": "3"}
+    mock_err = ClientError(code=429, response_json={"error": {"code": 429}}, response=mock_resp)
+
+    retry_after = provider._extract_retry_after(mock_err)
+    assert retry_after == 3.0
+
+    # Unreasonable Retry-After (> 10s) is ignored to preserve deadline
+    mock_resp.headers = {"Retry-After": "120"}
+    assert provider._extract_retry_after(mock_err) is None
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_per_attempt_timeout_transitions_to_fallback():
+    """Verify that when primary model exceeds per-attempt timeout, the fallback model takes over and succeeds."""
+    provider = GeminiVisionAIProvider(
+        api_key="test_key_timeout_fb",
+        model_name="gemini-3.8-flash",
+        fallback_model="gemini-2.0-flash",
+        timeout=1.0,
+        per_attempt_timeout=0.02,
+        max_retries=0,
+    )
+
+    async def slow_primary(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return MagicMock()
+
+    mock_fallback_response = MagicMock()
+    mock_fallback_response.text = json.dumps({
+        "foods": [{"name": "Idli Sambar", "confidence": 0.94, "estimated_portion": {"value": 120, "unit": "g"}}],
+        "overall_confidence": 0.94,
+        "uncertainties": [],
+    })
+
+    async def mock_generate_content(*args, **kwargs):
+        model = kwargs.get("model")
+        if model == "gemini-3.8-flash":
+            await asyncio.sleep(0.05)
+            return MagicMock()
+        return mock_fallback_response
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_generate_content)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    result = await provider.analyze_food_image(b"fake_image", "dish.jpg", session_id="test-session-per-attempt")
+
+    assert result.status == "success"
+    assert result.processing_metadata["model"] == "gemini-2.0-flash"
+    assert result.processing_metadata["fallback_used"] is True
+    assert len(result.detected_foods) == 1
+    assert result.detected_foods[0].name == "Idli Sambar"
+
+
+@pytest.mark.asyncio
+async def test_analyze_endpoint_returns_504_on_timeout(monkeypatch):
+    """Verify that POST /api/analyze returns HTTP 504 with a safe, polite message when upstream times out."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.core.rate_limit import analysis_rate_limiter
+
+    analysis_rate_limiter.reset()
+
+    mock_provider = GeminiVisionAIProvider(
+        api_key="secret_test_key",
+        timeout=0.01,
+        per_attempt_timeout=0.01,
+        max_retries=0,
+    )
+
+    async def slow_generate(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return MagicMock()
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = slow_generate
+    mock_provider._client = MagicMock()
+    mock_provider._client.aio = mock_aio
+
+    monkeypatch.setattr("app.services.analysis_service.get_ai_provider", lambda: mock_provider)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    jpeg_bytes = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00"
+        b"\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f"
+        b"\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\' \",#\x1c\x1c(7),01444\x1f\'9=82<.342\xff\xc0"
+        b"\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01"
+        b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda"
+        b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+    )
+
+    try:
+        response = client.post(
+            "/api/analyze",
+            files={"image": ("food.jpg", jpeg_bytes, "image/jpeg")},
+        )
+
+        assert response.status_code == 504
+        detail = response.json().get("detail", "")
+        assert "timed out" in detail.lower()
+        assert "try again" in detail.lower()
+        assert "secret_test_key" not in detail
+    finally:
+        analysis_rate_limiter.reset()
+
+
+@pytest.mark.asyncio
+async def test_analyze_endpoint_never_fabricates_data_on_provider_failure(monkeypatch):
+    """Verify that when AI provider fails, the endpoint returns strictly an error and never fabricates food results."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.core.rate_limit import analysis_rate_limiter
+
+    analysis_rate_limiter.reset()
+
+    mock_503 = ServerError(
+        code=503,
+        response_json={"error": {"code": 503, "message": "High demand", "status": "UNAVAILABLE"}},
+    )
+
+    mock_provider = GeminiVisionAIProvider(
+        api_key="secret_test_key",
+        max_retries=0,
+    )
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_503)
+    mock_provider._client = MagicMock()
+    mock_provider._client.aio = mock_aio
+
+    monkeypatch.setattr("app.services.analysis_service.get_ai_provider", lambda: mock_provider)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    jpeg_bytes = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00"
+        b"\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f"
+        b"\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\' \",#\x1c\x1c(7),01444\x1f\'9=82<.342\xff\xc0"
+        b"\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01"
+        b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda"
+        b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+    )
+
+    try:
+        response = client.post(
+            "/api/analyze",
+            files={"image": ("food.jpg", jpeg_bytes, "image/jpeg")},
+        )
+
+        assert response.status_code == 503
+        body = response.json()
+        assert "foods" not in body
+        assert "analysis" not in body
+        assert "calories" not in body
+        assert "status" not in body or body["status"] != "success"
+    finally:
+        analysis_rate_limiter.reset()
+

@@ -54,6 +54,7 @@ class GeminiVisionAIProvider(AIProvider):
         model_name: Optional[str] = None,
         fallback_model: Any = _SENTINEL,
         timeout: Optional[float] = None,
+        per_attempt_timeout: Optional[float] = None,
         max_retries: Optional[int] = None,
         retry_base_delay: Optional[float] = None,
         retry_max_delay: Optional[float] = None,
@@ -82,6 +83,11 @@ class GeminiVisionAIProvider(AIProvider):
             self.fallback_model = None
 
         self.timeout = timeout if timeout is not None else settings.AI_TIMEOUT_SECONDS
+        self.per_attempt_timeout = (
+            per_attempt_timeout
+            if per_attempt_timeout is not None
+            else getattr(settings, "AI_PER_ATTEMPT_TIMEOUT_SECONDS", 12.0)
+        )
         self.max_retries = max_retries if max_retries is not None else settings.AI_MAX_RETRIES
         self.retry_base_delay = (
             retry_base_delay if retry_base_delay is not None else settings.AI_RETRY_BASE_DELAY_SECONDS
@@ -165,48 +171,95 @@ class GeminiVisionAIProvider(AIProvider):
         ]
         return any(pattern in err_str for pattern in transient_patterns)
 
+    def _extract_retry_after(self, exc: Exception) -> Optional[float]:
+        """Extract Retry-After header in seconds from exception if present and bounded."""
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            headers = getattr(resp, "headers", None)
+            if headers and hasattr(headers, "items"):
+                for k, v in headers.items():
+                    if k.lower() == "retry-after":
+                        try:
+                            val = float(v)
+                            if 0.0 < val <= 10.0:
+                                return val
+                        except (ValueError, TypeError):
+                            pass
+        return None
+
+    def _build_content_config(self, model: str) -> types.GenerateContentConfig:
+        """
+        Build GenerateContentConfig tailored to the target model.
+        For Gemini 3.x series models, configure thinking_level='low' to eliminate excessive reasoning latency.
+        For Gemini 2.x and earlier models, omit thinking_config to avoid 400 INVALID_ARGUMENT errors.
+        """
+        config_kwargs: Dict[str, Any] = {
+            "system_instruction": FOOD_ANALYSIS_SYSTEM_PROMPT,
+            "response_mime_type": "application/json",
+            "temperature": 0.2,
+        }
+        if "gemini-3" in model.lower():
+            try:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
+            except Exception:
+                pass
+        return types.GenerateContentConfig(**config_kwargs)
+
     async def _execute_generate_content_with_retry(
         self,
         image_part: types.Part,
-        content_config: types.GenerateContentConfig,
         deadline: float,
+        session_id: Optional[str] = None,
     ) -> Tuple[Any, str, bool, int]:
         """
         Executes generate_content with bounded exponential backoff and jitter for transient errors.
-        Attempts the primary model up to (1 + max_retries) times.
+        Attempts the primary model up to (1 + max_retries) times with a per-attempt timeout.
         If primary model is exhausted due to transient issues, attempts the fallback model once.
         Returns: (response, model_used, fallback_used, total_attempts)
         """
         total_attempts = 0
         max_primary_attempts = 1 + max(0, self.max_retries)
         last_exception: Optional[Exception] = None
+        session_tag = f"[session={session_id}] " if session_id else ""
 
         # 1. Primary model attempts with bounded backoff
         for attempt_idx in range(max_primary_attempts):
             total_attempts += 1
             remaining = deadline - time.time()
-            if remaining <= 0.05:
-                logger.error(f"Gemini API request timed out before attempt {attempt_idx + 1} (remaining: {remaining:.3f}s).")
+            if remaining <= 0.5:
+                logger.error(
+                    f"{session_tag}AI analysis deadline exceeded before primary attempt {attempt_idx + 1} "
+                    f"(remaining: {remaining:.3f}s, total timeout: {self.timeout}s)."
+                )
                 raise AIProviderTimeoutError(
                     f"Food analysis timed out after {self.timeout} seconds. The vision service is experiencing high latency."
                 )
 
-            per_attempt_timeout = min(self.timeout, remaining)
+            # Enforce per-attempt timeout so attempt 0 cannot monopolize the overall deadline
+            current_attempt_timeout = min(self.per_attempt_timeout, remaining)
+            attempt_start = time.time()
 
             try:
+                content_config = self._build_content_config(self.model_name)
                 response = await asyncio.wait_for(
                     self._client.aio.models.generate_content(
                         model=self.model_name,
                         contents=[image_part, FOOD_ANALYSIS_USER_PROMPT],
                         config=content_config,
                     ),
-                    timeout=per_attempt_timeout,
+                    timeout=current_attempt_timeout,
+                )
+                attempt_duration_ms = round((time.time() - attempt_start) * 1000, 1)
+                logger.info(
+                    f"{session_tag}Primary model '{self.model_name}' attempt {attempt_idx + 1} "
+                    f"succeeded in {attempt_duration_ms}ms."
                 )
                 return response, self.model_name, False, total_attempts
 
             except Exception as exc:
                 last_exception = exc
                 safe_err = self._sanitize_message(str(exc))
+                attempt_duration_ms = round((time.time() - attempt_start) * 1000, 1)
 
                 # Check permanent errors -> fail fast without retry
                 if self._is_permanent_error(exc):
@@ -219,7 +272,7 @@ class GeminiVisionAIProvider(AIProvider):
                     )
                     if is_model_unavailable:
                         logger.error(
-                            f"Gemini vision model '{self.model_name}' is unavailable or deprecated: {safe_err}"
+                            f"{session_tag}Gemini vision model '{self.model_name}' is unavailable or deprecated after {attempt_duration_ms}ms: {safe_err}"
                         )
                         raise AIProviderConfigError(
                             f"Configured Gemini vision model '{self.model_name}' is unavailable or deprecated. "
@@ -232,76 +285,86 @@ class GeminiVisionAIProvider(AIProvider):
                         or "unauthenticated" in safe_err.lower()
                         or "permission denied" in safe_err.lower()
                     ):
-                        logger.error("Gemini authentication failed: invalid or unauthorized API key.")
+                        logger.error(f"{session_tag}Gemini authentication failed after {attempt_duration_ms}ms: invalid or unauthorized API key.")
                         raise AIProviderConfigError(
                             "Invalid or unauthorized Gemini API key. Please check the GEMINI_API_KEY environment variable."
                         )
 
-                    logger.error(f"Permanent Gemini API error on model '{self.model_name}': {safe_err}")
+                    logger.error(f"{session_tag}Permanent Gemini API error on model '{self.model_name}' after {attempt_duration_ms}ms: {safe_err}")
                     raise AIProviderError(f"Multimodal vision provider error: {safe_err}")
 
                 # Check if transient error
                 if not self._is_transient_error(exc):
-                    logger.error(f"Non-transient Gemini API error on model '{self.model_name}': {safe_err}")
+                    logger.error(f"{session_tag}Non-transient Gemini API error on model '{self.model_name}' after {attempt_duration_ms}ms: {safe_err}")
                     raise AIProviderError(f"Multimodal vision provider error: {safe_err}")
 
-                # Transient error: determine if retry is possible
+                # Transient error handling
                 if attempt_idx < max_primary_attempts - 1:
-                    backoff = self.retry_base_delay * (2 ** attempt_idx)
-                    jitter = random.uniform(0.0, 0.25)
-                    delay = min(backoff + jitter, self.retry_max_delay)
+                    # Check for Retry-After header
+                    retry_after = self._extract_retry_after(exc)
+                    if retry_after is not None:
+                        delay = min(retry_after + random.uniform(0.0, 0.25), self.retry_max_delay)
+                    else:
+                        backoff = self.retry_base_delay * (2 ** attempt_idx)
+                        jitter = random.uniform(0.0, 0.25)
+                        delay = min(backoff + jitter, self.retry_max_delay)
 
                     # Check remaining time budget
                     remaining_after_sleep = (deadline - time.time()) - delay
-                    if remaining_after_sleep <= 0.1:
+                    if remaining_after_sleep <= 0.2:
                         logger.warning(
-                            f"Cannot retry transient error on '{self.model_name}' (attempt {attempt_idx + 1}/{max_primary_attempts}): "
-                            f"delay ({delay:.2f}s) would exceed deadline ({deadline - time.time():.2f}s remaining)."
+                            f"{session_tag}Cannot retry transient error on '{self.model_name}' (attempt {attempt_idx + 1}/{max_primary_attempts}): "
+                            f"delay ({delay:.2f}s) would leave insufficient deadline ({deadline - time.time():.2f}s remaining)."
                         )
                         break
 
                     logger.warning(
-                        f"Transient Gemini API failure on model '{self.model_name}' "
-                        f"(attempt {attempt_idx + 1}/{max_primary_attempts}): {safe_err}. Retrying in {delay:.2f}s..."
+                        f"{session_tag}Transient failure on model '{self.model_name}' "
+                        f"(attempt {attempt_idx + 1}/{max_primary_attempts}, elapsed {attempt_duration_ms}ms): {safe_err}. Retrying in {delay:.2f}s..."
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.warning(
-                        f"Exhausted all {max_primary_attempts} attempts on primary model '{self.model_name}' "
+                        f"{session_tag}Exhausted all {max_primary_attempts} attempts on primary model '{self.model_name}' "
                         f"due to transient error: {safe_err}"
                     )
 
         # 2. Primary attempts exhausted. Attempt one fallback model if configured and different.
         if self.fallback_model and self.fallback_model != self.model_name:
             remaining = deadline - time.time()
-            if remaining > 0.5:
+            if remaining > 0.1:
                 total_attempts += 1
+                fallback_timeout = min(self.per_attempt_timeout, remaining)
+                fb_start = time.time()
                 logger.info(
-                    f"Primary model '{self.model_name}' temporarily unavailable. "
-                    f"Attempting fallback model '{self.fallback_model}' ({remaining:.2f}s remaining)..."
+                    f"{session_tag}Primary model '{self.model_name}' temporarily unavailable. "
+                    f"Attempting fallback model '{self.fallback_model}' (timeout: {fallback_timeout:.1f}s, remaining: {remaining:.1f}s)..."
                 )
                 try:
+                    fb_config = self._build_content_config(self.fallback_model)
                     fb_response = await asyncio.wait_for(
                         self._client.aio.models.generate_content(
                             model=self.fallback_model,
                             contents=[image_part, FOOD_ANALYSIS_USER_PROMPT],
-                            config=content_config,
+                            config=fb_config,
                         ),
-                        timeout=min(self.timeout, remaining),
+                        timeout=fallback_timeout,
                     )
-                    logger.info(f"Fallback model '{self.fallback_model}' succeeded.")
+                    fb_duration_ms = round((time.time() - fb_start) * 1000, 1)
+                    logger.info(f"{session_tag}Fallback model '{self.fallback_model}' succeeded in {fb_duration_ms}ms.")
                     return fb_response, self.fallback_model, True, total_attempts
                 except Exception as fb_exc:
                     last_exception = fb_exc
                     safe_fb_err = self._sanitize_message(str(fb_exc))
-                    logger.error(f"Fallback model '{self.fallback_model}' failed: {safe_fb_err}")
+                    fb_duration_ms = round((time.time() - fb_start) * 1000, 1)
+                    logger.error(f"{session_tag}Fallback model '{self.fallback_model}' failed after {fb_duration_ms}ms: {safe_fb_err}")
                     if self._is_permanent_error(fb_exc):
                         err_code = getattr(fb_exc, "code", None)
                         if err_code in (401, 403) or "api key" in safe_fb_err.lower():
                             raise AIProviderConfigError("Invalid or unauthorized Gemini API key.")
             else:
                 logger.warning(
-                    f"Insufficient time remaining ({remaining:.2f}s) to attempt fallback model '{self.fallback_model}'."
+                    f"{session_tag}Insufficient time remaining ({remaining:.2f}s) to attempt fallback model '{self.fallback_model}'."
                 )
 
         # 3. Both primary (and fallback) failed due to transient conditions or timeout
@@ -315,7 +378,7 @@ class GeminiVisionAIProvider(AIProvider):
         )
 
     async def analyze_food_image(
-        self, image_bytes: bytes, filename: str
+        self, image_bytes: bytes, filename: str, session_id: Optional[str] = None
     ) -> AIAnalysisResult:
         if not self.api_key or not self._client:
             logger.error("GEMINI_API_KEY is not configured.")
@@ -323,30 +386,27 @@ class GeminiVisionAIProvider(AIProvider):
                 "Gemini API key is not configured. Please set the GEMINI_API_KEY environment variable."
             )
 
+        session_tag = f"[session={session_id}] " if session_id else ""
         mime_type = self._determine_mime_type(filename)
         start_time = time.time()
         deadline = start_time + self.timeout
         logger.info(
-            f"Starting multimodal food analysis with model '{self.model_name}' (fallback: '{self.fallback_model}') "
+            f"{session_tag}Starting multimodal food analysis with model '{self.model_name}' "
+            f"(fallback: '{self.fallback_model}', timeout: {self.timeout}s, per_attempt: {self.per_attempt_timeout}s) "
             f"for file '{filename}' ({len(image_bytes)} bytes)..."
         )
 
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-        content_config = types.GenerateContentConfig(
-            system_instruction=FOOD_ANALYSIS_SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            temperature=0.2,
-        )
 
         response, active_model, fallback_used, attempts = await self._execute_generate_content_with_retry(
             image_part=image_part,
-            content_config=content_config,
             deadline=deadline,
+            session_id=session_id,
         )
 
         duration_ms = round((time.time() - start_time) * 1000, 2)
         logger.info(
-            f"Gemini API responded in {duration_ms}ms using model '{active_model}' "
+            f"{session_tag}Gemini API responded in {duration_ms}ms using model '{active_model}' "
             f"(attempts: {attempts}, fallback_used: {fallback_used})."
         )
 

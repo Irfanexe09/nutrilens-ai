@@ -52,7 +52,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-3.8-flash"
     GEMINI_FALLBACK_MODEL: Optional[str] = "gemini-2.0-flash"
-    AI_TIMEOUT_SECONDS: float = 25.0
+    AI_TIMEOUT_SECONDS: float = 30.0  # Total end-to-end operation deadline
+    AI_PER_ATTEMPT_TIMEOUT_SECONDS: float = 12.0  # Per-call timeout ceiling to prevent single attempt monopolizing deadline
     AI_MAX_RETRIES: int = 2
     AI_RETRY_BASE_DELAY_SECONDS: float = 1.0
     AI_RETRY_MAX_DELAY_SECONDS: float = 3.0

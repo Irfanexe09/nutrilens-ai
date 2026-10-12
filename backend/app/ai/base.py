@@ -81,7 +81,7 @@ class AIProvider(ABC):
 
     @abstractmethod
     async def analyze_food_image(
-        self, image_bytes: bytes, filename: str
+        self, image_bytes: bytes, filename: str, session_id: Optional[str] = None
     ) -> AIAnalysisResult:
         """Process image and return identified food items, portions, confidence, and uncertainties."""
         pass

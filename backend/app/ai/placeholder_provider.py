@@ -1,5 +1,4 @@
-import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.ai.base import (
     AIProvider,
     AIAnalysisResult,
@@ -17,7 +16,7 @@ class PlaceholderAIProvider(AIProvider):
     """
 
     async def analyze_food_image(
-        self, image_bytes: bytes, filename: str
+        self, image_bytes: bytes, filename: str, session_id: Optional[str] = None
     ) -> AIAnalysisResult:
         fname = filename.lower()
         candidates: List[DetectedItemCandidate] = []

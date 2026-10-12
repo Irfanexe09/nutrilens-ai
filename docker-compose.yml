@@ -58,6 +58,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ALLOW_PLACEHOLDER_AI: ${ALLOW_PLACEHOLDER_AI:-false}
       RATE_LIMIT_ANALYZE_PER_MINUTE: ${RATE_LIMIT_ANALYZE_PER_MINUTE:-15}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-30.0}
+      AI_PER_ATTEMPT_TIMEOUT_SECONDS: ${AI_PER_ATTEMPT_TIMEOUT_SECONDS:-12.0}
+
     # Security: External web traffic must enter via Nginx reverse proxy on frontend service.
     # Backend direct port is bound strictly to host loopback (127.0.0.1) for local inspection/OpenAPI docs.
     ports:
