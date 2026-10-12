@@ -262,7 +262,7 @@ export const api = {
     return handleResponse<FoodItem>(res);
   },
 
-  async analyzeImage(file: File): Promise<FoodAnalysisResponse> {
+  async analyzeImage(file: File, signal?: AbortSignal): Promise<FoodAnalysisResponse> {
     const formData = new FormData();
     formData.append('image', file);
 
@@ -270,6 +270,7 @@ export const api = {
       method: 'POST',
       headers: { ...getAuthHeader() },
       body: formData,
+      signal,
     });
     return handleResponse<FoodAnalysisResponse>(res);
   },

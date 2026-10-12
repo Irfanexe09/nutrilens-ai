@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Upload,
   Camera,
@@ -7,6 +7,8 @@ import {
   ArrowRight,
   Loader2,
   Sparkles,
+  CheckCircle2,
+  Info,
 } from 'lucide-react';
 import { api, ApiError } from '../services/api';
 import { FoodAnalysisResponse, DetectedFoodItem } from '../types';
@@ -32,13 +34,35 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('Analyzing your meal...');
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [storageNotice, setStorageNotice] = useState<{
+    type: 'info' | 'warning' | 'success';
+    message: string;
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isUploaded, setIsUploaded] = useState(false);
+
+  // References for cancellation and double-click prevention
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isSubmittingRef = useRef(false);
 
   // Analysis result state
   const [analysisResult, setAnalysisResult] = useState<FoodAnalysisResponse | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup object URL on unmount to prevent memory leaks
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const validateAndSetFile = (file: File) => {
     setErrorMessage(null);
@@ -87,40 +111,126 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
 
   const handleAnalyze = async () => {
     if (!selectedFile || !previewUrl) return;
+    if (isSubmittingRef.current || isLoading) return;
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setErrorMessage(null);
-    setLoadingStep('Uploading food photo to cloud storage...');
+    setStorageNotice(null);
+    setUploadProgress(0);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      // Upload to Firebase Cloud Storage for permanent storage URL
+      // 1. Upload to Firebase Cloud Storage with bounded timeout and progress tracking
+      setLoadingStep('Uploading food photo to cloud storage...');
       try {
-        const cloudUrl = await uploadFoodImageToStorage(selectedFile);
+        const cloudUrl = await uploadFoodImageToStorage(selectedFile, {
+          signal: controller.signal,
+          timeoutMs: 15000,
+          onProgress: (progress) => {
+            setUploadProgress(progress.progressPercent);
+            setLoadingStep(`Uploading food photo to cloud storage (${progress.progressPercent}%)...`);
+          },
+        });
         setPreviewUrl(cloudUrl);
-      } catch (storageErr) {
-        // Non-blocking: If rules require authentication or bucket is unconfigured, fallback gracefully to local preview
-        console.warn('Firebase Storage upload notice (continuing with local image):', storageErr);
+        setIsUploaded(true);
+        setStorageNotice({
+          type: 'success',
+          message: 'Photo securely stored in Firebase Cloud Storage.',
+        });
+      } catch (storageErr: any) {
+        // Safe diagnostic logging: error code and name only, never credentials
+        console.warn('[ScanFood] Cloud storage notice:', {
+          code: storageErr?.code || 'unknown',
+          name: storageErr?.name || 'Error',
+        });
+
+        // If the user aborted the operation, stop immediately
+        if (controller.signal.aborted || storageErr?.code === 'storage/canceled') {
+          setIsLoading(false);
+          isSubmittingRef.current = false;
+          setUploadProgress(null);
+          setLoadingStep('');
+          return;
+        }
+
+        // Non-blocking fallback: Inform the user while continuing to AI analysis
+        setIsUploaded(false);
+        if (storageErr?.code === 'storage/unauthenticated') {
+          setStorageNotice({
+            type: 'info',
+            message: 'Cloud backup skipped (sign in to sync photos across devices). Continuing with direct AI analysis.',
+          });
+        } else if (storageErr?.code === 'storage/timeout') {
+          setStorageNotice({
+            type: 'warning',
+            message: 'Cloud storage upload timed out after 15s. Continuing with direct AI analysis.',
+          });
+        } else {
+          setStorageNotice({
+            type: 'warning',
+            message: 'Cloud storage unavailable. Continuing with direct AI analysis.',
+          });
+        }
       }
 
+      // Check if user cancelled while cloud upload was resolving
+      if (controller.signal.aborted) {
+        setIsLoading(false);
+        isSubmittingRef.current = false;
+        return;
+      }
+
+      // 2. Multimodal Vision AI Evaluation
+      setUploadProgress(null);
       setLoadingStep('Multimodal vision evaluating food items and portions...');
-      const response = await api.analyzeImage(selectedFile);
+      const response = await api.analyzeImage(selectedFile, controller.signal);
       setAnalysisResult(response);
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
+      if (controller.signal.aborted) {
+        setErrorMessage('Meal analysis was canceled.');
+      } else if (err instanceof ApiError) {
         setErrorMessage(err.message);
       } else {
         setErrorMessage('Food analysis timed out or failed. Please try again in a few moments.');
       }
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
+      abortControllerRef.current = null;
+      setUploadProgress(null);
     }
   };
 
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsLoading(false);
+    isSubmittingRef.current = false;
+    setUploadProgress(null);
+    setLoadingStep('');
+    setErrorMessage('Meal analysis was canceled by user.');
+  };
+
   const handleReset = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (previewUrl && previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewUrl);
+    }
     setSelectedFile(null);
     setPreviewUrl(null);
     setErrorMessage(null);
+    setStorageNotice(null);
+    setUploadProgress(null);
+    setIsUploaded(false);
     setAnalysisResult(null);
+    setIsLoading(false);
+    isSubmittingRef.current = false;
   };
 
   const handleConfirmedFoods = (confirmedFoods: DetectedFoodItem[]) => {
@@ -330,22 +440,87 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                   <FileImage className="w-4 h-4 text-lime-primary" />
                   <span className="font-medium text-white">{selectedFile.name}</span>
                 </div>
-                <span>{(selectedFile.size / 1024).toFixed(1)} KB</span>
+                <div className="flex items-center gap-3">
+                  {isUploaded && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-lime-dim text-lime-primary border border-lime-primary/30">
+                      Cloud Stored
+                    </span>
+                  )}
+                  <span>{(selectedFile.size / 1024).toFixed(1)} KB</span>
+                </div>
               </div>
             )}
 
-            {/* Loading Indicator */}
-            {isLoading && (
-              <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 flex items-center gap-3 animate-fadeIn">
-                <Loader2 className="w-5 h-5 text-lime-primary animate-spin shrink-0" />
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold text-white">
-                    {loadingStep}
-                  </div>
-                  <div className="text-[11px] text-lime-primary">
-                    Multimodal vision AI is identifying visible food items and estimating gram weights...
-                  </div>
+            {/* Storage notice (cloud upload info/warning/success) */}
+            {storageNotice && (
+              <div
+                className={`flex items-start gap-2.5 p-3.5 rounded-xl border text-xs animate-fadeIn ${
+                  storageNotice.type === 'success'
+                    ? 'bg-lime-dim border-lime-primary/30 text-lime-primary'
+                    : storageNotice.type === 'warning'
+                    ? 'bg-amber-400/10 border-amber-400/30 text-amber-300'
+                    : 'bg-dark-inner border-dark-border text-slate-300'
+                }`}
+              >
+                {storageNotice.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-lime-primary" />
+                ) : storageNotice.type === 'warning' ? (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                ) : (
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-lime-primary" />
+                )}
+                <div className="space-y-0.5 min-w-0">
+                  <span className="font-semibold block">
+                    {storageNotice.type === 'success'
+                      ? 'Cloud Storage Connected'
+                      : storageNotice.type === 'warning'
+                      ? 'Storage Notice'
+                      : 'Storage Notice'}
+                  </span>
+                  <span className="leading-relaxed">{storageNotice.message}</span>
                 </div>
+              </div>
+            )}
+
+            {/* Loading Indicator with progress & cancel button */}
+            {isLoading && (
+              <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 space-y-2.5 animate-fadeIn">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Loader2 className="w-5 h-5 text-lime-primary animate-spin shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white truncate">
+                        {loadingStep}
+                      </div>
+                      <div className="text-[11px] text-lime-primary/90">
+                        Multimodal vision AI is identifying visible dishes and calculating grams...
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="px-2.5 py-1 text-xs font-semibold text-coral-primary hover:text-white bg-dark-inner hover:bg-coral-primary/20 border border-coral-primary/30 rounded-lg transition-colors shrink-0"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                {uploadProgress !== null && (
+                  <div className="space-y-1">
+                    <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-lime-primary h-full rounded-full transition-all duration-200"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                      <span>Cloud storage upload</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -354,7 +529,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
               <div className="flex items-start gap-2.5 p-4 rounded-xl bg-coral-dim border border-coral-primary/30 text-coral-primary text-xs animate-fadeIn">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <span className="font-bold block">Analysis Failed</span>
+                  <span className="font-bold block">Analysis Notice</span>
                   <span className="leading-relaxed">{errorMessage}</span>
                 </div>
               </div>
@@ -371,24 +546,36 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                 Choose Different Photo
               </button>
 
-              <button
-                type="button"
-                onClick={handleAnalyze}
-                disabled={isLoading}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-lime-primary text-lime-dark font-extrabold text-sm hover:bg-lime-hover active:scale-[0.99] disabled:opacity-50 transition-all shadow-lg shadow-lime-primary/10"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Analyzing Meal...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Analyze Food</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                {isLoading && (
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="px-4 py-2.5 rounded-xl text-coral-primary hover:text-white bg-dark-inner hover:bg-coral-primary/20 border border-coral-primary/30 text-sm font-semibold transition-colors"
+                  >
+                    Cancel
+                  </button>
                 )}
-              </button>
+
+                <button
+                  type="button"
+                  onClick={handleAnalyze}
+                  disabled={isLoading}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-lime-primary text-lime-dark font-extrabold text-sm hover:bg-lime-hover active:scale-[0.99] disabled:opacity-50 transition-all shadow-lg shadow-lime-primary/10"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{errorMessage ? 'Retry Analysis' : 'Analyze Food'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -25,3 +25,17 @@ Object.defineProperty(globalThis, 'localStorage', {
   value: localStorageMock,
   writable: true,
 });
+
+if (typeof window.URL.createObjectURL === 'undefined') {
+  Object.defineProperty(window.URL, 'createObjectURL', {
+    value: () => 'blob:http://localhost/mock-blob-url',
+    writable: true,
+  });
+}
+
+if (typeof window.URL.revokeObjectURL === 'undefined') {
+  Object.defineProperty(window.URL, 'revokeObjectURL', {
+    value: () => {},
+    writable: true,
+  });
+}
