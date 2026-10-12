@@ -27,27 +27,27 @@ export const FoodCatalog: React.FC<FoodCatalogProps> = ({ foods, onSelectForMeal
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 mb-2">
-            <Database className="w-3.5 h-3.5 text-emerald-600" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-lime-primary/10 text-lime-primary text-xs font-semibold border border-lime-primary/30 mb-2">
+            <Database className="w-3.5 h-3.5 text-lime-primary" />
             Verified Indian Food Intelligence
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             Indian Food Database Explorer
           </h2>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">
+          <p className="text-xs sm:text-sm text-dark-muted mt-1">
             Deterministic macronutrient baseline profiles with recipe variance margins for authentic regional dishes.
           </p>
         </div>
 
         {/* Search Input */}
         <div className="relative min-w-[260px]">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search Biryani, Dosa, Dal..."
-            className="w-full text-xs pl-9 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+            className="w-full text-xs pl-9 pr-4 py-2.5 rounded-xl bg-dark-card border border-dark-border text-white placeholder:text-slate-500 focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary/30"
           />
         </div>
       </div>
@@ -60,8 +60,8 @@ export const FoodCatalog: React.FC<FoodCatalogProps> = ({ foods, onSelectForMeal
             onClick={() => setSelectedCategory(cat)}
             className={`whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
               selectedCategory === cat
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                ? 'bg-lime-primary text-dark-bg font-bold shadow-xs'
+                : 'bg-dark-card text-dark-muted border border-dark-border hover:bg-dark-inner hover:text-white'
             }`}
           >
             {cat}
@@ -74,43 +74,43 @@ export const FoodCatalog: React.FC<FoodCatalogProps> = ({ foods, onSelectForMeal
         {filtered.map((food) => (
           <div
             key={food.id}
-            className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-emerald-300 hover:shadow-sm transition-all flex flex-col justify-between"
+            className="bg-dark-card rounded-2xl border border-dark-border p-5 hover:border-lime-primary/40 hover:shadow-lg hover:shadow-black/40 transition-all flex flex-col justify-between group"
           >
             <div className="space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 tracking-tight">{food.name}</h3>
+                  <h3 className="text-base font-bold text-white tracking-tight group-hover:text-lime-primary transition-colors">{food.name}</h3>
                   {food.local_name && (
-                    <span className="text-xs text-slate-500 font-medium">{food.local_name}</span>
+                    <span className="text-xs text-dark-muted font-medium">{food.local_name}</span>
                   )}
                 </div>
-                <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                <span className="text-[10px] font-semibold text-lime-primary bg-lime-primary/10 px-2 py-0.5 rounded border border-lime-primary/20">
                   {food.category}
                 </span>
               </div>
 
               {food.description && (
-                <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
                   {food.description}
                 </p>
               )}
 
               {/* Serving details */}
-              <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1 rounded-lg">
+              <div className="text-[11px] text-dark-muted bg-dark-inner border border-dark-border/60 px-2.5 py-1 rounded-lg font-mono">
                 Serving: {food.serving_size} {food.serving_unit} • Variance: ±{food.uncertainty_pct}%
               </div>
             </div>
 
             {/* Macro Stats */}
-            <div className="pt-4 mt-4 border-t border-slate-100 space-y-3">
+            <div className="pt-4 mt-4 border-t border-dark-border space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-xl font-extrabold text-slate-900">{food.calories}</span>
-                  <span className="text-xs text-slate-500 font-medium ml-1">kcal</span>
+                  <span className="text-xl font-extrabold text-white font-mono">{food.calories}</span>
+                  <span className="text-xs text-dark-muted font-medium ml-1">kcal</span>
                 </div>
                 <button
                   onClick={() => onSelectForMeal(food)}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors"
+                  className="inline-flex items-center gap-1 text-xs font-bold text-dark-bg bg-lime-primary hover:bg-lime-hover px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
                 >
                   Analyze in Meal
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -118,17 +118,17 @@ export const FoodCatalog: React.FC<FoodCatalogProps> = ({ foods, onSelectForMeal
               </div>
 
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="p-1.5 rounded-lg bg-slate-50">
-                  <span className="text-[10px] text-slate-400 block font-medium">Protein</span>
-                  <span className="font-bold text-slate-800">{food.protein}g</span>
+                <div className="p-1.5 rounded-lg bg-dark-inner border border-dark-border/60">
+                  <span className="text-[10px] text-dark-muted block font-medium">Protein</span>
+                  <span className="font-bold text-lime-primary font-mono">{food.protein}g</span>
                 </div>
-                <div className="p-1.5 rounded-lg bg-slate-50">
-                  <span className="text-[10px] text-slate-400 block font-medium">Carbs</span>
-                  <span className="font-bold text-slate-800">{food.carbohydrates}g</span>
+                <div className="p-1.5 rounded-lg bg-dark-inner border border-dark-border/60">
+                  <span className="text-[10px] text-dark-muted block font-medium">Carbs</span>
+                  <span className="font-bold text-amber-400 font-mono">{food.carbohydrates}g</span>
                 </div>
-                <div className="p-1.5 rounded-lg bg-slate-50">
-                  <span className="text-[10px] text-slate-400 block font-medium">Fat</span>
-                  <span className="font-bold text-slate-800">{food.fat}g</span>
+                <div className="p-1.5 rounded-lg bg-dark-inner border border-dark-border/60">
+                  <span className="text-[10px] text-dark-muted block font-medium">Fat</span>
+                  <span className="font-bold text-rose-400 font-mono">{food.fat}g</span>
                 </div>
               </div>
             </div>

@@ -102,7 +102,6 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     };
     setItems(updated);
     recalculateNutrition(updated);
-    // Invalidate saved ID so re-optimization creates clean state
     setIsSaved(false);
   };
 
@@ -152,7 +151,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       });
       setSavedMealId(saved.id);
       setIsSaved(true);
-      setSaveSuccessMessage(`Meal successfully recorded as ${selectedMealType}!`);
+      setSaveSuccessMessage(`Meal recorded successfully as ${selectedMealType}!`);
       setTimeout(() => setSaveSuccessMessage(null), 4000);
       return saved.id;
     } catch (err) {
@@ -170,7 +169,6 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     try {
       let currentMealId = savedMealId;
       if (!currentMealId) {
-        // Auto-save meal to establish base record for optimization
         const saved = await api.saveMeal({
           meal_type: selectedMealType,
           notes: isDemo
@@ -213,7 +211,6 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
         items: rec.items,
       });
 
-      // Map applied items back to client state
       const appliedItems: MealItem[] = rec.items.map((it) => ({
         food_id: it.food_id || undefined,
         food_name: it.food_name,
@@ -251,25 +248,25 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8 animate-fadeIn">
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-dark-border">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Nutritional Breakdown
             </h2>
             {isRecalculating && (
-              <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+              <Loader2 className="w-4 h-4 animate-spin text-lime-primary" />
             )}
             {isDemo && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
                 Interactive Demo
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Deterministic macro calculations based on verified nutritional records.
+          <p className="text-xs text-slate-400">
+            Deterministic macronutrient calculations based on verified biochemical records.
           </p>
         </div>
 
@@ -277,7 +274,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           <select
             value={selectedMealType}
             onChange={(e) => setSelectedMealType(e.target.value)}
-            className="px-3 py-2 rounded-xl text-slate-700 bg-white border border-slate-300 text-xs font-semibold focus:outline-emerald-500 shadow-2xs"
+            className="px-3 py-2 rounded-xl text-white bg-dark-inner border border-dark-border text-xs font-semibold focus:outline-none focus:border-lime-primary shadow-sm"
           >
             <option value="breakfast">Breakfast</option>
             <option value="lunch">Lunch</option>
@@ -286,34 +283,38 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           </select>
           <button
             onClick={onScanAnother}
-            className="px-4 py-2 rounded-xl text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 text-xs font-semibold transition-colors"
+            className="px-3.5 py-2 rounded-xl text-slate-300 bg-dark-card border border-dark-border hover:bg-dark-cardHover hover:text-white text-xs font-semibold transition-colors"
           >
-            Scan Another Meal
+            Scan Another
           </button>
           <button
             onClick={handleSaveMeal}
             disabled={items.length === 0 || isSaved}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold disabled:opacity-50 transition-colors shadow-xs"
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
+              isSaved
+                ? 'bg-dark-inner text-lime-primary border border-lime-primary/30'
+                : 'bg-dark-card text-white border border-dark-border hover:bg-dark-cardHover'
+            } disabled:opacity-50`}
           >
-            <BookmarkCheck className="w-4 h-4" />
-            {isSaved ? 'Meal Saved' : 'Save Meal'}
+            <BookmarkCheck className="w-4 h-4 text-lime-primary" />
+            <span>{isSaved ? 'Meal Logged' : 'Log Meal'}</span>
           </button>
 
-          {/* Phase 5 Primary Optimizer CTA */}
+          {/* Primary Optimizer CTA */}
           <button
             onClick={() => handleTriggerOptimization()}
             disabled={items.length === 0 || isOptimizing}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm hover:shadow"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-lime-primary hover:bg-lime-hover text-lime-dark text-xs font-extrabold transition-all shadow-lg shadow-lime-primary/10"
           >
             {isOptimizing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Finding improvements...
+                <span>Optimizing...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4 text-emerald-200" />
-                Optimize My Meal
+                <Sparkles className="w-4 h-4" />
+                <span>Optimize Meal</span>
               </>
             )}
           </button>
@@ -321,50 +322,50 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       </div>
 
       {saveSuccessMessage && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-emerald-600" />
+        <div className="p-3.5 bg-lime-dim border border-lime-primary/30 text-lime-primary text-xs rounded-xl flex items-center gap-2 animate-fadeIn font-medium">
+          <CheckCircle className="w-4 h-4 shrink-0" />
           <span>{saveSuccessMessage}</span>
         </div>
       )}
 
       {appliedNotice && (
-        <div className="p-3 bg-teal-50 border border-teal-200 text-teal-800 text-xs rounded-xl flex items-center gap-2">
-          <Check className="w-4 h-4 text-teal-600 flex-shrink-0" />
+        <div className="p-3.5 bg-lime-dim border border-lime-primary/30 text-lime-primary text-xs rounded-xl flex items-center gap-2 animate-fadeIn font-medium">
+          <Check className="w-4 h-4 shrink-0" />
           <span>{appliedNotice}</span>
         </div>
       )}
 
-      {/* Main Grid: Visual Summary + Macro Details */}
+      {/* Main Grid: Visual Summary (Left) + Confirmed Items & Optimizer (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Image + Primary Calorie Card */}
+        {/* Left Column: Image + Energy Breakdown */}
         <div className="space-y-6">
           {previewImageUrl && (
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-              <div className="p-3 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <span className="font-medium text-slate-700">Analyzed Image</span>
-                <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
-                  Multimodal Input
+            <div className="bg-dark-card rounded-2xl border border-dark-border overflow-hidden shadow-lg">
+              <div className="p-3 border-b border-dark-border flex items-center justify-between text-xs text-slate-400">
+                <span className="font-semibold text-white">Analyzed Photograph</span>
+                <span className="text-[10px] bg-dark-inner px-2 py-0.5 rounded text-slate-300 font-mono">
+                  Vision Input
                 </span>
               </div>
               <img
                 src={previewImageUrl}
                 alt="Meal Analysis Preview"
-                className="w-full h-48 object-cover"
+                className="w-full h-48 object-cover bg-dark-inner"
               />
             </div>
           )}
 
-          {/* Primary Deterministic Calorie Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+          {/* Primary Calorie Card */}
+          <div className="bg-gradient-to-br from-dark-card to-dark-elevated rounded-2xl border border-dark-border p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                 Deterministic Energy
               </span>
               <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
                   nutrition?.confidence_level === 'HIGH'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
+                    ? 'bg-lime-dim text-lime-primary border-lime-primary/30'
+                    : 'bg-amber-400/10 text-amber-300 border-amber-400/30'
                 }`}
               >
                 {nutrition?.confidence_level || 'MEDIUM'} Confidence
@@ -372,112 +373,102 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             </div>
 
             <div>
-              <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
+              <div className="text-4xl font-black text-white tracking-tight">
                 ~{nutrition ? Math.round(nutrition.total_calories) : '—'}{' '}
-                <span className="text-sm font-semibold text-slate-500">kcal</span>
+                <span className="text-sm font-semibold text-slate-400">kcal</span>
               </div>
               {nutrition && (
-                <div className="text-xs font-medium text-slate-600 mt-1">
-                  Range: {Math.round(nutrition.calorie_min)} –{' '}
-                  {Math.round(nutrition.calorie_max)} kcal (±
+                <div className="text-xs font-mono text-slate-400 mt-1">
+                  Range: {Math.round(nutrition.calorie_min)} – {Math.round(nutrition.calorie_max)} kcal (±
                   {Math.round(nutrition.uncertainty_calories)} kcal)
                 </div>
               )}
             </div>
 
-            {/* Scientific Explanation of Uncertainty */}
-            <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+            <div className="pt-3 border-t border-dark-border text-xs text-slate-400 space-y-1">
               <div className="flex items-start gap-1.5">
-                <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                <span>
-                  Honest uncertainty accounts for cooking oil absorption and visual 2D depth.
+                <Info className="w-3.5 h-3.5 text-lime-primary shrink-0 mt-0.5" />
+                <span className="leading-relaxed text-[11px]">
+                  Uncertainty accounts for cooking oil absorption and visual 2D depth variance.
                 </span>
               </div>
             </div>
           </div>
 
           {/* Macro Breakdown Summary */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          <div className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
               Macronutrient Totals
             </h3>
 
-            <div className="space-y-3">
+            <div className="space-y-3.5">
+              {/* Protein */}
               <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">Protein</span>
-                  <span className="text-slate-900 font-bold">
+                <div className="flex justify-between text-xs font-medium mb-1.5">
+                  <span className="text-sky-400 font-semibold">Protein</span>
+                  <span className="text-white font-mono font-bold">
                     {nutrition ? nutrition.total_protein.toFixed(1) : 0} g
                   </span>
                 </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                    className="bg-sky-400 h-full rounded-full transition-all duration-300"
                     style={{
-                      width: `${Math.min(
-                        100,
-                        (nutrition?.macro_distribution?.protein_pct || 0) * 1.5
-                      )}%`,
+                      width: `${Math.min(100, (nutrition?.macro_distribution?.protein_pct || 0) * 1.5)}%`,
                     }}
                   />
                 </div>
               </div>
 
+              {/* Carbs */}
               <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">Carbohydrates</span>
-                  <span className="text-slate-900 font-bold">
+                <div className="flex justify-between text-xs font-medium mb-1.5">
+                  <span className="text-amber-400 font-semibold">Carbohydrates</span>
+                  <span className="text-white font-mono font-bold">
                     {nutrition ? nutrition.total_carbohydrates.toFixed(1) : 0} g
                   </span>
                 </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-amber-500 h-full rounded-full transition-all duration-300"
+                    className="bg-amber-400 h-full rounded-full transition-all duration-300"
                     style={{
-                      width: `${Math.min(
-                        100,
-                        (nutrition?.macro_distribution?.carbohydrates_pct || 0) * 1.2
-                      )}%`,
+                      width: `${Math.min(100, (nutrition?.macro_distribution?.carbohydrates_pct || 0) * 1.2)}%`,
                     }}
                   />
                 </div>
               </div>
 
+              {/* Fat */}
               <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">Fat</span>
-                  <span className="text-slate-900 font-bold">
+                <div className="flex justify-between text-xs font-medium mb-1.5">
+                  <span className="text-rose-400 font-semibold">Fat</span>
+                  <span className="text-white font-mono font-bold">
                     {nutrition ? nutrition.total_fat.toFixed(1) : 0} g
                   </span>
                 </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-rose-500 h-full rounded-full transition-all duration-300"
+                    className="bg-rose-400 h-full rounded-full transition-all duration-300"
                     style={{
-                      width: `${Math.min(
-                        100,
-                        (nutrition?.macro_distribution?.fat_pct || 0) * 1.5
-                      )}%`,
+                      width: `${Math.min(100, (nutrition?.macro_distribution?.fat_pct || 0) * 1.5)}%`,
                     }}
                   />
                 </div>
               </div>
 
+              {/* Fiber */}
               <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">Dietary Fiber</span>
-                  <span className="text-slate-900 font-bold">
+                <div className="flex justify-between text-xs font-medium mb-1.5">
+                  <span className="text-lime-primary font-semibold">Dietary Fiber</span>
+                  <span className="text-white font-mono font-bold">
                     {nutrition ? nutrition.total_fiber.toFixed(1) : 0} g
                   </span>
                 </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-teal-500 h-full rounded-full transition-all duration-300"
+                    className="bg-lime-primary h-full rounded-full transition-all duration-300"
                     style={{
-                      width: `${Math.min(
-                        100,
-                        ((nutrition?.total_fiber || 0) / 25) * 100
-                      )}%`,
+                      width: `${Math.min(100, ((nutrition?.total_fiber || 0) / 25) * 100)}%`,
                     }}
                   />
                 </div>
@@ -489,38 +480,38 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
         {/* Right Column: Confirmed Items Table + Optimizer + Daily Contribution */}
         <div className="lg:col-span-2 space-y-6">
           {/* Confirmed Food Items List */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900">Confirmed Dishes & Portions</h3>
-              <span className="text-xs text-slate-500 font-medium">
+          <div className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-dark-border">
+              <h3 className="text-base font-bold text-white">Confirmed Dishes & Portions</h3>
+              <span className="text-xs text-slate-400 font-mono">
                 {items.length} {items.length === 1 ? 'item' : 'items'} in meal
               </span>
             </div>
 
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-dark-border">
               {items.map((item, idx) => (
                 <div key={idx} className="py-3 flex items-center justify-between gap-4">
                   <div>
-                    <h4 className="text-sm font-semibold text-slate-900">{item.food_name}</h4>
-                    <p className="text-xs text-slate-500">
+                    <h4 className="text-sm font-bold text-white">{item.food_name}</h4>
+                    <p className="text-xs text-slate-400 font-mono">
                       Serving: {item.portion_value} {item.portion_unit || item.serving_unit}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden text-xs">
+                    <div className="flex items-center border border-dark-border rounded-lg overflow-hidden text-xs bg-dark-inner">
                       <button
                         onClick={() => handleServingChange(idx, item.serving_count - 0.25)}
-                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold"
+                        className="px-2.5 py-1 hover:bg-dark-cardHover text-slate-300 font-bold"
                       >
                         -
                       </button>
-                      <span className="px-2.5 py-1 font-semibold text-slate-800">
+                      <span className="px-3 py-1 font-mono font-semibold text-white">
                         {item.serving_count}x
                       </span>
                       <button
                         onClick={() => handleServingChange(idx, item.serving_count + 0.25)}
-                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold"
+                        className="px-2.5 py-1 hover:bg-dark-cardHover text-slate-300 font-bold"
                       >
                         +
                       </button>
@@ -528,7 +519,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
                     <button
                       onClick={() => handleRemoveItem(idx)}
-                      className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-coral-primary transition-colors"
                       title="Remove item"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -547,7 +538,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                   e.target.value = '';
                 }}
                 defaultValue=""
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-slate-700 font-medium focus:outline-emerald-500"
+                className="w-full text-xs bg-dark-inner border border-dark-border rounded-xl py-2.5 px-3 text-slate-300 font-medium focus:outline-none focus:border-lime-primary"
               >
                 <option value="" disabled>
                   + Add another dish from verified Indian food catalog...
@@ -563,27 +554,27 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
           {/* DAILY TARGET CONTRIBUTION EVALUATION */}
           {evaluation && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-dark-border">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-lime-dim text-lime-primary flex items-center justify-center border border-lime-primary/20">
                     <Target className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
+                    <h3 className="text-base font-bold text-white">
                       Daily Target Fit & Insights
                     </h3>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-400">
                       Evaluated against your personalized remaining daily budget.
                     </p>
                   </div>
                 </div>
 
                 <span
-                  className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                  className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
                     evaluation.fits_remaining_budget
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      ? 'bg-lime-dim text-lime-primary border-lime-primary/30'
+                      : 'bg-coral-dim text-coral-primary border-coral-primary/30'
                   }`}
                 >
                   {evaluation.fits_remaining_budget ? '✓ Fits Daily Budget' : 'Exceeds Daily Budget'}
@@ -592,8 +583,8 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
               <div className="space-y-2">
                 {evaluation.insights.map((insight, idx) => (
-                  <div key={idx} className="flex items-start gap-2 text-xs text-slate-700">
-                    <ChevronRight className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div key={idx} className="flex items-start gap-2 text-xs text-slate-300">
+                    <ChevronRight className="w-3.5 h-3.5 text-lime-primary shrink-0 mt-0.5" />
                     <span>{insight}</span>
                   </div>
                 ))}
@@ -601,32 +592,32 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             </div>
           )}
 
-          {/* PHASE 5: REAL AI MEAL OPTIMIZER SECTION */}
-          <div className="bg-gradient-to-br from-white to-emerald-50/40 rounded-2xl border border-emerald-200 p-6 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-emerald-100">
+          {/* AI MEAL OPTIMIZER SECTION */}
+          <div className="bg-gradient-to-br from-dark-card to-dark-elevated rounded-2xl border border-dark-border p-6 shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-dark-border">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                <div className="w-9 h-9 rounded-xl bg-lime-primary text-lime-dark flex items-center justify-center shadow-sm">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Optimize My Meal</h3>
-                  <p className="text-xs text-slate-500">
+                  <h3 className="text-base font-bold text-white">Optimize My Meal</h3>
+                  <p className="text-xs text-slate-400">
                     Deterministic alternatives tailored to your target with AI explanations.
                   </p>
                 </div>
               </div>
 
               {/* Goal Selector */}
-              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs self-start sm:self-auto">
+              <div className="flex items-center gap-1 bg-dark-inner p-1 rounded-xl border border-dark-border self-start sm:self-auto">
                 <button
                   onClick={() => {
                     setSelectedGoal('weight_loss');
                     handleTriggerOptimization('WEIGHT_LOSS');
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     selectedGoal === 'weight_loss'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-lime-primary text-lime-dark shadow-sm'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   Weight Loss
@@ -636,10 +627,10 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                     setSelectedGoal('muscle_gain');
                     handleTriggerOptimization('MUSCLE_GAIN');
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     selectedGoal === 'muscle_gain'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-lime-primary text-lime-dark shadow-sm'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   Muscle Gain
@@ -649,10 +640,10 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                     setSelectedGoal('balanced');
                     handleTriggerOptimization('MAINTENANCE');
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     selectedGoal === 'balanced'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-lime-primary text-lime-dark shadow-sm'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   Balanced
@@ -663,12 +654,12 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             {/* Loading State */}
             {isOptimizing ? (
               <div className="py-12 text-center space-y-3">
-                <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-sm font-semibold text-slate-700">
-                  Finding ways to improve this meal…
+                <Loader2 className="w-8 h-8 text-lime-primary animate-spin mx-auto" />
+                <p className="text-sm font-bold text-white">
+                  Generating verified meal alternatives…
                 </p>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Generating verified candidate modifications and recalculating nutrition deterministically.
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Calculating portion modifications and recalculating nutrition deterministically.
                 </p>
               </div>
             ) : optimizationData ? (
@@ -676,11 +667,11 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 {/* Issues Detected Badges */}
                 {optimizationData.issues.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-600">Focus Areas:</span>
+                    <span className="text-xs font-semibold text-slate-400">Focus Areas:</span>
                     {optimizationData.issues.map((iss, i) => (
                       <span
                         key={i}
-                        className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200"
+                        className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/30"
                       >
                         {iss.replace('_', ' ')}
                       </span>
@@ -688,81 +679,81 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                   </div>
                 )}
 
-                {/* Recommendations List (2-3 options) */}
+                {/* Recommendations List */}
                 <div className="space-y-4">
                   {optimizationData.recommendations.map((rec, index) => (
                     <div
                       key={rec.id}
-                      className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-emerald-300 transition-all space-y-3"
+                      className="bg-dark-inner rounded-xl border border-dark-border p-5 shadow-sm hover:border-lime-primary/40 transition-all space-y-3"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
+                          <span className="w-6 h-6 rounded-full bg-lime-dim text-lime-primary font-bold text-xs flex items-center justify-center border border-lime-primary/20">
                             {index + 1}
                           </span>
-                          <h4 className="text-sm font-bold text-slate-900">{rec.title}</h4>
+                          <h4 className="text-sm font-bold text-white">{rec.title}</h4>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                          <span className="text-xs font-mono font-bold text-lime-primary bg-lime-dim px-2.5 py-0.5 rounded-md border border-lime-primary/20">
                             Fit Score: {Math.round(rec.score * 100)}%
                           </span>
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-600">{rec.description}</p>
+                      <p className="text-xs text-slate-300">{rec.description}</p>
 
                       {/* Key Change Metrics Badges */}
-                      <div className="flex flex-wrap gap-2 pt-1">
+                      <div className="flex flex-wrap gap-2 pt-1 font-mono">
                         <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded ${
+                          className={`text-xs font-bold px-2 py-0.5 rounded border ${
                             rec.calorie_delta <= 0
-                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                              ? 'bg-lime-dim text-lime-primary border-lime-primary/30'
+                              : 'bg-amber-400/10 text-amber-300 border-amber-400/30'
                           }`}
                         >
                           {rec.calorie_delta > 0 ? `+${rec.calorie_delta}` : rec.calorie_delta} kcal
                         </span>
                         <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded ${
+                          className={`text-xs font-bold px-2 py-0.5 rounded border ${
                             rec.protein_delta >= 0
-                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-700'
+                              ? 'bg-sky-400/10 text-sky-400 border-sky-400/30'
+                              : 'bg-dark-card text-slate-400 border-dark-border'
                           }`}
                         >
                           {rec.protein_delta > 0 ? `+${rec.protein_delta}` : rec.protein_delta}g protein
                         </span>
                         {rec.fiber_delta !== 0 && (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-lime-dim text-lime-primary border border-lime-primary/30">
                             {rec.fiber_delta > 0 ? `+${rec.fiber_delta}` : rec.fiber_delta}g fiber
                           </span>
                         )}
                       </div>
 
                       {/* AI Explanation Quote */}
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs text-slate-700 italic flex items-start gap-2">
-                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                      <div className="bg-dark-card p-3 rounded-lg border border-dark-border text-xs text-slate-300 italic flex items-start gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-lime-primary shrink-0 mt-0.5" />
                         <span>"{rec.explanation}"</span>
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-dark-border">
                         <button
                           onClick={() => setActiveRecommendation(rec)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition"
+                          className="px-3 py-1.5 bg-dark-card hover:bg-dark-cardHover text-slate-200 rounded-lg text-xs font-semibold transition"
                         >
                           View Changes
                         </button>
                         <button
                           onClick={() => handleApplyOptimization(rec)}
                           disabled={isApplying}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                          className="px-3.5 py-1.5 bg-lime-primary hover:bg-lime-hover text-lime-dark rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1.5"
                         >
                           {isApplying ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <Check className="w-3.5 h-3.5" />
                           )}
-                          Apply Suggestion
+                          <span>Apply Suggestion</span>
                         </button>
                       </div>
                     </div>
@@ -771,16 +762,16 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
               </div>
             ) : (
               <div className="py-8 text-center space-y-3">
-                <Sparkles className="w-8 h-8 text-emerald-500 mx-auto" />
-                <h4 className="text-sm font-bold text-slate-800">
+                <Sparkles className="w-8 h-8 text-lime-primary mx-auto" />
+                <h4 className="text-sm font-bold text-white">
                   Ready to optimize this meal?
                 </h4>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Click below to generate deterministic portion adjustments, protein pairings, and balanced options backed by verified Indian food data.
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Click below to generate deterministic portion adjustments and balanced Indian food alternatives.
                 </p>
                 <button
                   onClick={() => handleTriggerOptimization()}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+                  className="px-5 py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-extrabold text-xs rounded-xl shadow-lg shadow-lime-primary/10 transition"
                 >
                   Generate Optimization Suggestions
                 </button>
@@ -788,44 +779,44 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             )}
 
             {/* Disclaimer */}
-            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-2 border-t border-emerald-100">
-              <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 pt-2 border-t border-dark-border">
+              <Info className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span>
-                <strong>Nutrition transparency notice:</strong> The optimizer provides general nutrition-oriented suggestions and does not provide medical advice.
+                <strong>Transparency notice:</strong> The optimizer provides nutritional suggestions based on verified food baselines and does not replace medical dietary advice.
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* PHASE 5: BEFORE / AFTER COMPARISON MODAL */}
+      {/* BEFORE / AFTER COMPARISON MODAL */}
       {activeRecommendation && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-dark-card rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-dark-border max-h-[90vh] overflow-y-auto space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-dark-border">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-lime-primary bg-lime-dim px-2 py-0.5 rounded border border-lime-primary/20">
                   Before vs After Comparison
                 </span>
-                <h3 className="text-lg font-bold text-slate-900 mt-1">
+                <h3 className="text-lg font-bold text-white mt-1">
                   {activeRecommendation.title}
                 </h3>
               </div>
               <button
                 onClick={() => setActiveRecommendation(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-lg"
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Specific Modification Changes List */}
-            <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-              <span className="text-xs font-bold text-slate-700">Detailed Adjustments:</span>
-              <ul className="space-y-1 text-xs text-slate-600">
+            <div className="space-y-1.5 bg-dark-inner p-3.5 rounded-xl border border-dark-border">
+              <span className="text-xs font-bold text-white">Detailed Adjustments:</span>
+              <ul className="space-y-1 text-xs text-slate-300">
                 {activeRecommendation.changes.map((ch, i) => (
                   <li key={i} className="flex items-start gap-1.5">
-                    <ChevronRight className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <ChevronRight className="w-3.5 h-3.5 text-lime-primary shrink-0 mt-0.5" />
                     <span>{ch}</span>
                   </li>
                 ))}
@@ -835,39 +826,39 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             {/* Side-by-Side Nutrition Grid */}
             <div className="grid grid-cols-2 gap-4">
               {/* Original */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="p-4 rounded-xl bg-dark-inner border border-dark-border space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase text-slate-500">Original Meal</span>
-                  <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-semibold">
+                  <span className="text-xs font-bold uppercase text-slate-400">Original Meal</span>
+                  <span className="text-[10px] bg-dark-card text-slate-300 px-2 py-0.5 rounded font-mono font-semibold border border-dark-border">
                     Baseline
                   </span>
                 </div>
-                <div className="text-3xl font-black text-slate-900">
+                <div className="text-3xl font-black text-white">
                   ~{Math.round(activeRecommendation.original_nutrition.calories)}{' '}
-                  <span className="text-xs font-normal text-slate-500">kcal</span>
+                  <span className="text-xs font-normal text-slate-400">kcal</span>
                 </div>
-                <div className="space-y-1 text-xs text-slate-600">
+                <div className="space-y-1 text-xs text-slate-300 font-mono">
                   <div className="flex justify-between">
                     <span>Protein:</span>
-                    <strong className="text-slate-800">
+                    <strong className="text-sky-400 font-bold">
                       {activeRecommendation.original_nutrition.protein}g
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Carbs:</span>
-                    <strong className="text-slate-800">
+                    <strong className="text-amber-400 font-bold">
                       {activeRecommendation.original_nutrition.carbohydrates}g
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Fat:</span>
-                    <strong className="text-slate-800">
+                    <strong className="text-rose-400 font-bold">
                       {activeRecommendation.original_nutrition.fat}g
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Fiber:</span>
-                    <strong className="text-slate-800">
+                    <strong className="text-lime-primary font-bold">
                       {activeRecommendation.original_nutrition.fiber}g
                     </strong>
                   </div>
@@ -875,26 +866,26 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
               </div>
 
               {/* Optimized */}
-              <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+              <div className="p-4 rounded-xl bg-lime-dim/20 border border-lime-primary/30 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase text-emerald-800">
+                  <span className="text-xs font-bold uppercase text-lime-primary">
                     Optimized Alternative
                   </span>
-                  <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded font-bold">
+                  <span className="text-[10px] bg-lime-dim text-lime-primary px-2 py-0.5 rounded font-mono font-bold border border-lime-primary/20">
                     Suggested
                   </span>
                 </div>
-                <div className="text-3xl font-black text-emerald-950">
+                <div className="text-3xl font-black text-white">
                   ~{Math.round(activeRecommendation.optimized_nutrition.calories)}{' '}
-                  <span className="text-xs font-normal text-emerald-700">kcal</span>
+                  <span className="text-xs font-normal text-slate-400">kcal</span>
                 </div>
-                <div className="space-y-1 text-xs text-emerald-900">
+                <div className="space-y-1 text-xs text-slate-200 font-mono">
                   <div className="flex justify-between">
                     <span>Protein:</span>
-                    <strong className="font-bold">
+                    <strong className="text-sky-400 font-bold">
                       {activeRecommendation.optimized_nutrition.protein}g{' '}
                       {activeRecommendation.protein_delta !== 0 && (
-                        <span className="text-[10px] text-emerald-700">
+                        <span className="text-[10px]">
                           ({activeRecommendation.protein_delta > 0 ? '+' : ''}
                           {activeRecommendation.protein_delta}g)
                         </span>
@@ -903,22 +894,22 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span>Carbs:</span>
-                    <strong className="font-bold">
+                    <strong className="text-amber-400 font-bold">
                       {activeRecommendation.optimized_nutrition.carbohydrates}g
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Fat:</span>
-                    <strong className="font-bold">
+                    <strong className="text-rose-400 font-bold">
                       {activeRecommendation.optimized_nutrition.fat}g
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Fiber:</span>
-                    <strong className="font-bold">
+                    <strong className="text-lime-primary font-bold">
                       {activeRecommendation.optimized_nutrition.fiber}g{' '}
                       {activeRecommendation.fiber_delta !== 0 && (
-                        <span className="text-[10px] text-emerald-700">
+                        <span className="text-[10px]">
                           ({activeRecommendation.fiber_delta > 0 ? '+' : ''}
                           {activeRecommendation.fiber_delta}g)
                         </span>
@@ -929,40 +920,25 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
               </div>
             </div>
 
-            {/* Uncertainty and Estimation Confidence */}
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1">
-              <div className="flex items-center justify-between font-semibold text-slate-800">
-                <span>
-                  {activeRecommendation.optimized_nutrition.formatted_estimate}
-                </span>
-                <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded text-slate-700">
-                  {activeRecommendation.confidence} Confidence
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Portion sizes and cooking method introduce natural recipe variance.
-              </p>
-            </div>
-
             {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-border">
               <button
                 onClick={() => setActiveRecommendation(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+                className="px-4 py-2 bg-dark-inner hover:bg-dark-cardHover text-slate-300 rounded-xl text-xs font-semibold transition"
               >
                 Keep Original Meal
               </button>
               <button
                 onClick={() => handleApplyOptimization(activeRecommendation)}
                 disabled={isApplying}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                className="px-5 py-2 bg-lime-primary hover:bg-lime-hover text-lime-dark rounded-xl text-xs font-bold transition shadow-lg shadow-lime-primary/10 flex items-center gap-1.5"
               >
                 {isApplying ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Check className="w-3.5 h-3.5" />
                 )}
-                Apply This Version
+                <span>Apply This Version</span>
               </button>
             </div>
           </div>

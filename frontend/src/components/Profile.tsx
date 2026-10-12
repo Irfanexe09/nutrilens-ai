@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   ShieldAlert,
   Info,
-  Dumbbell,
-  Scale,
   CheckCircle2,
   LogIn,
+  AlertCircle,
+  Loader2,
+  Sparkles,
+  Flame,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import {
@@ -37,6 +40,24 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Controlled raw string states for reliable editing without keystroke resetting
+  const [ageStr, setAgeStr] = useState<string>('26');
+  const [heightStr, setHeightStr] = useState<string>('175');
+  const [weightStr, setWeightStr] = useState<string>('70');
+  const [sex, setSex] = useState<Sex>('MALE');
+  const [activityLevel, setActivityLevel] = useState<ActivityLevel>('MODERATELY_ACTIVE');
+  const [goal, setGoal] = useState<UserGoal>('WEIGHT_LOSS');
+
+  // Track if user is actively modifying fields so background fetch doesn't clobber edits
+  const isDirtyRef = useRef(false);
+
+  // Field validation errors
+  const [fieldErrors, setFieldErrors] = useState<{
+    age?: string;
+    height_cm?: string;
+    weight_kg?: string;
+  }>({});
+
   // Auth Modal State
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -56,17 +77,53 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
         setCurrentUser(user);
         try {
           const profData = await api.getProfile();
-          setProfile(profData.profile);
-          setTargets(profData.targets);
+          // Only sync from server if user hasn't started modifying fields locally
+          if (!isDirtyRef.current) {
+            setProfile(profData.profile);
+            setAgeStr(String(profData.profile.age));
+            setHeightStr(String(profData.profile.height_cm));
+            setWeightStr(String(profData.profile.weight_kg));
+            setSex(profData.profile.sex);
+            setActivityLevel(profData.profile.activity_level);
+            setGoal(profData.profile.goal);
+            setTargets(profData.targets);
+          }
         } catch {
           // Profile not yet created for this user; calculate preview
-          calculateLocalPreview(profile);
+          if (!isDirtyRef.current) {
+            calculateLocalPreview({
+              age: 26,
+              sex: 'MALE',
+              height_cm: 175,
+              weight_kg: 70,
+              activity_level: 'MODERATELY_ACTIVE',
+              goal: 'WEIGHT_LOSS',
+            });
+          }
         }
       } else {
-        calculateLocalPreview(profile);
+        if (!isDirtyRef.current) {
+          calculateLocalPreview({
+            age: 26,
+            sex: 'MALE',
+            height_cm: 175,
+            weight_kg: 70,
+            activity_level: 'MODERATELY_ACTIVE',
+            goal: 'WEIGHT_LOSS',
+          });
+        }
       }
     } catch {
-      calculateLocalPreview(profile);
+      if (!isDirtyRef.current) {
+        calculateLocalPreview({
+          age: 26,
+          sex: 'MALE',
+          height_cm: 175,
+          weight_kg: 70,
+          activity_level: 'MODERATELY_ACTIVE',
+          goal: 'WEIGHT_LOSS',
+        });
+      }
     }
   };
 
@@ -125,16 +182,220 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
     });
   };
 
-  const handleFieldChange = (field: keyof UserProfile, value: any) => {
-    const updated = { ...profile, [field]: value };
-    setProfile(updated);
-    calculateLocalPreview(updated);
+  const validateNumericValues = (a: string, h: string, w: string) => {
+    const errors: { age?: string; height_cm?: string; weight_kg?: string } = {};
+
+    if (!a.trim()) {
+      errors.age = 'Age is required (10–120 years).';
+    } else {
+      const parsedAge = Number(a);
+      if (isNaN(parsedAge) || !Number.isInteger(parsedAge) || parsedAge < 10 || parsedAge > 120) {
+        errors.age = 'Age must be a whole number between 10 and 120.';
+      }
+    }
+
+    if (!h.trim()) {
+      errors.height_cm = 'Height is required (50–280 cm).';
+    } else {
+      const parsedHeight = Number(h);
+      if (isNaN(parsedHeight) || parsedHeight < 50 || parsedHeight > 280) {
+        errors.height_cm = 'Height must be between 50 and 280 cm.';
+      }
+    }
+
+    if (!w.trim()) {
+      errors.weight_kg = 'Weight is required (20–400 kg).';
+    } else {
+      const parsedWeight = Number(w);
+      if (isNaN(parsedWeight) || parsedWeight < 20 || parsedWeight > 400) {
+        errors.weight_kg = 'Weight must be between 20 and 400 kg.';
+      }
+    }
+
+    return errors;
+  };
+
+  const handleAgeChange = (val: string) => {
+    isDirtyRef.current = true;
+    setAgeStr(val);
     setSaveSuccess(false);
+
+    // Validate and update preview if inputs are valid
+    const parsedAge = Number(val);
+    const parsedHeight = Number(heightStr);
+    const parsedWeight = Number(weightStr);
+
+    if (
+      !isNaN(parsedAge) &&
+      Number.isInteger(parsedAge) &&
+      parsedAge >= 10 &&
+      parsedAge <= 120 &&
+      !isNaN(parsedHeight) &&
+      parsedHeight >= 50 &&
+      !isNaN(parsedWeight) &&
+      parsedWeight >= 20
+    ) {
+      setFieldErrors((prev) => ({ ...prev, age: undefined }));
+      calculateLocalPreview({
+        age: parsedAge,
+        sex,
+        height_cm: parsedHeight,
+        weight_kg: parsedWeight,
+        activity_level: activityLevel,
+        goal,
+      });
+    } else if (val.trim() && (isNaN(parsedAge) || parsedAge < 10 || parsedAge > 120)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        age: 'Age must be a whole number between 10 and 120.',
+      }));
+    } else {
+      setFieldErrors((prev) => ({ ...prev, age: undefined }));
+    }
+  };
+
+  const handleHeightChange = (val: string) => {
+    isDirtyRef.current = true;
+    setHeightStr(val);
+    setSaveSuccess(false);
+
+    const parsedAge = Number(ageStr);
+    const parsedHeight = Number(val);
+    const parsedWeight = Number(weightStr);
+
+    if (
+      !isNaN(parsedHeight) &&
+      parsedHeight >= 50 &&
+      parsedHeight <= 280 &&
+      !isNaN(parsedAge) &&
+      parsedAge >= 10 &&
+      !isNaN(parsedWeight) &&
+      parsedWeight >= 20
+    ) {
+      setFieldErrors((prev) => ({ ...prev, height_cm: undefined }));
+      calculateLocalPreview({
+        age: parsedAge,
+        sex,
+        height_cm: parsedHeight,
+        weight_kg: parsedWeight,
+        activity_level: activityLevel,
+        goal,
+      });
+    } else if (val.trim() && (isNaN(parsedHeight) || parsedHeight < 50 || parsedHeight > 280)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        height_cm: 'Height must be between 50 and 280 cm.',
+      }));
+    } else {
+      setFieldErrors((prev) => ({ ...prev, height_cm: undefined }));
+    }
+  };
+
+  const handleWeightChange = (val: string) => {
+    isDirtyRef.current = true;
+    setWeightStr(val);
+    setSaveSuccess(false);
+
+    const parsedAge = Number(ageStr);
+    const parsedHeight = Number(heightStr);
+    const parsedWeight = Number(val);
+
+    if (
+      !isNaN(parsedWeight) &&
+      parsedWeight >= 20 &&
+      parsedWeight <= 400 &&
+      !isNaN(parsedAge) &&
+      parsedAge >= 10 &&
+      !isNaN(parsedHeight) &&
+      parsedHeight >= 50
+    ) {
+      setFieldErrors((prev) => ({ ...prev, weight_kg: undefined }));
+      calculateLocalPreview({
+        age: parsedAge,
+        sex,
+        height_cm: parsedHeight,
+        weight_kg: parsedWeight,
+        activity_level: activityLevel,
+        goal,
+      });
+    } else if (val.trim() && (isNaN(parsedWeight) || parsedWeight < 20 || parsedWeight > 400)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        weight_kg: 'Weight must be between 20 and 400 kg.',
+      }));
+    } else {
+      setFieldErrors((prev) => ({ ...prev, weight_kg: undefined }));
+    }
+  };
+
+  const handleSexChange = (newSex: Sex) => {
+    isDirtyRef.current = true;
+    setSex(newSex);
+    setSaveSuccess(false);
+    const parsedAge = Number(ageStr);
+    const parsedHeight = Number(heightStr);
+    const parsedWeight = Number(weightStr);
+    if (!isNaN(parsedAge) && !isNaN(parsedHeight) && !isNaN(parsedWeight)) {
+      calculateLocalPreview({
+        age: parsedAge,
+        sex: newSex,
+        height_cm: parsedHeight,
+        weight_kg: parsedWeight,
+        activity_level: activityLevel,
+        goal,
+      });
+    }
+  };
+
+  const handleActivityChange = (newAct: ActivityLevel) => {
+    isDirtyRef.current = true;
+    setActivityLevel(newAct);
+    setSaveSuccess(false);
+    const parsedAge = Number(ageStr);
+    const parsedHeight = Number(heightStr);
+    const parsedWeight = Number(weightStr);
+    if (!isNaN(parsedAge) && !isNaN(parsedHeight) && !isNaN(parsedWeight)) {
+      calculateLocalPreview({
+        age: parsedAge,
+        sex,
+        height_cm: parsedHeight,
+        weight_kg: parsedWeight,
+        activity_level: newAct,
+        goal,
+      });
+    }
+  };
+
+  const handleGoalChange = (newGoal: UserGoal) => {
+    isDirtyRef.current = true;
+    setGoal(newGoal);
+    setSaveSuccess(false);
+    const parsedAge = Number(ageStr);
+    const parsedHeight = Number(heightStr);
+    const parsedWeight = Number(weightStr);
+    if (!isNaN(parsedAge) && !isNaN(parsedHeight) && !isNaN(parsedWeight)) {
+      calculateLocalPreview({
+        age: parsedAge,
+        sex,
+        height_cm: parsedHeight,
+        weight_kg: parsedWeight,
+        activity_level: activityLevel,
+        goal: newGoal,
+      });
+    }
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    // Validate inputs
+    const errors = validateNumericValues(ageStr, heightStr, weightStr);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMessage('Please correct the highlighted biometric inputs before saving.');
+      return;
+    }
 
     // If not logged in, prompt user to log in or create a demo session
     if (!api.getToken()) {
@@ -142,14 +403,32 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
       return;
     }
 
+    const payload: UserProfile = {
+      ...profile,
+      age: parseInt(ageStr, 10),
+      height_cm: parseFloat(heightStr),
+      weight_kg: parseFloat(weightStr),
+      sex,
+      activity_level: activityLevel,
+      goal,
+    };
+
     setLoading(true);
     try {
-      const res = await api.updateProfile(profile);
+      const res = await api.updateProfile(payload);
       setProfile(res.profile);
+      setAgeStr(String(res.profile.age));
+      setHeightStr(String(res.profile.height_cm));
+      setWeightStr(String(res.profile.weight_kg));
+      setSex(res.profile.sex);
+      setActivityLevel(res.profile.activity_level);
+      setGoal(res.profile.goal);
       setTargets(res.targets);
       setSaveSuccess(true);
+      isDirtyRef.current = false;
       if (onProfileUpdated) onProfileUpdated();
     } catch (err: any) {
+      // Preserve user-entered values in state while displaying error
       setErrorMessage(err.message || 'Failed to update profile');
     } finally {
       setLoading(false);
@@ -160,6 +439,25 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
     e.preventDefault();
     setAuthError(null);
     setLoading(true);
+
+    const errors = validateNumericValues(ageStr, heightStr, weightStr);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setAuthError('Please correct biometric inputs first.');
+      setLoading(false);
+      return;
+    }
+
+    const payload: UserProfile = {
+      ...profile,
+      age: parseInt(ageStr, 10),
+      height_cm: parseFloat(heightStr),
+      weight_kg: parseFloat(weightStr),
+      sex,
+      activity_level: activityLevel,
+      goal,
+    };
+
     try {
       if (authMode === 'register') {
         const res = await api.register(email, password, name || undefined);
@@ -169,11 +467,19 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
         setCurrentUser(res.user);
       }
       setShowAuthModal(false);
-      // Now save profile with the new token
-      const profRes = await api.updateProfile(profile);
+
+      // Save profile with newly authenticated token
+      const profRes = await api.updateProfile(payload);
       setProfile(profRes.profile);
+      setAgeStr(String(profRes.profile.age));
+      setHeightStr(String(profRes.profile.height_cm));
+      setWeightStr(String(profRes.profile.weight_kg));
+      setSex(profRes.profile.sex);
+      setActivityLevel(profRes.profile.activity_level);
+      setGoal(profRes.profile.goal);
       setTargets(profRes.targets);
       setSaveSuccess(true);
+      isDirtyRef.current = false;
       if (onProfileUpdated) onProfileUpdated();
     } catch (err: any) {
       setAuthError(err.message || 'Authentication failed');
@@ -184,15 +490,43 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
 
   const handleCreateDemoUser = async () => {
     setLoading(true);
+    setErrorMessage(null);
+
+    const errors = validateNumericValues(ageStr, heightStr, weightStr);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMessage('Please correct biometric inputs first.');
+      setLoading(false);
+      return;
+    }
+
+    const payload: UserProfile = {
+      ...profile,
+      age: parseInt(ageStr, 10),
+      height_cm: parseFloat(heightStr),
+      weight_kg: parseFloat(weightStr),
+      sex,
+      activity_level: activityLevel,
+      goal,
+    };
+
     try {
       const demoEmail = `demo_${Date.now()}@nutrilens.ai`;
       const res = await api.register(demoEmail, 'DemoPass123!', 'NutriLens Demo User');
       setCurrentUser(res.user);
       setShowAuthModal(false);
-      const profRes = await api.updateProfile(profile);
+
+      const profRes = await api.updateProfile(payload);
       setProfile(profRes.profile);
+      setAgeStr(String(profRes.profile.age));
+      setHeightStr(String(profRes.profile.height_cm));
+      setWeightStr(String(profRes.profile.weight_kg));
+      setSex(profRes.profile.sex);
+      setActivityLevel(profRes.profile.activity_level);
+      setGoal(profRes.profile.goal);
       setTargets(profRes.targets);
       setSaveSuccess(true);
+      isDirtyRef.current = false;
       if (onProfileUpdated) onProfileUpdated();
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to launch demo account');
@@ -202,25 +536,25 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-200 gap-4">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8 animate-fadeIn">
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-dark-border gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-              Phase 4: Personalization Engine
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
+              Personalization Engine
             </span>
             {currentUser && (
-              <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                Logged in as {currentUser.email}
+              <span className="text-[11px] bg-dark-card text-slate-300 px-2.5 py-0.5 rounded-full border border-dark-border">
+                {currentUser.email}
               </span>
             )}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Personal Profile & Daily Nutrition Targets
           </h1>
-          <p className="text-slate-600 text-sm mt-1">
-            Deterministic energy and macronutrient targets calculated from body metrics and activity.
+          <p className="text-slate-400 text-sm mt-1">
+            Deterministic energy and macronutrient targets computed via Mifflin-St Jeor equation.
           </p>
         </div>
 
@@ -228,7 +562,7 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
           {!currentUser ? (
             <button
               onClick={() => setShowAuthModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-lime-primary hover:bg-lime-hover text-lime-dark rounded-xl text-xs sm:text-sm font-bold transition shadow-lg shadow-lime-primary/10"
             >
               <LogIn className="w-4 h-4" />
               Sign In / Sync Data
@@ -240,7 +574,7 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                 setCurrentUser(null);
                 setSaveSuccess(false);
               }}
-              className="text-xs text-slate-500 hover:text-rose-600 font-medium"
+              className="text-xs text-slate-400 hover:text-coral-primary font-medium transition-colors"
             >
               Sign Out
             </button>
@@ -248,40 +582,57 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
         </div>
       </div>
 
-      {/* Main Grid: Form on Left, Target Insights on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
+      {/* Main Grid: Form on Left (5 cols), Target Insights on Right (7 cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Profile Input Form (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4">
-            <User className="w-5 h-5 text-emerald-600" />
-            Body Metrics & Goal
-          </h2>
+        <div className="lg:col-span-5 bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <User className="w-4 h-4 text-lime-primary" />
+              Biometric Metrics & Goal
+            </h2>
+            <span className="text-[11px] text-slate-400 font-mono">Metric Units</span>
+          </div>
 
-          <form onSubmit={handleSaveProfile} className="space-y-4">
+          <form onSubmit={handleSaveProfile} className="space-y-4" noValidate>
+            {/* Age & Sex */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Age (years)
+                <label htmlFor="profile-age" className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Age <span className="text-slate-400 font-normal">(years)</span>
                 </label>
                 <input
-                  type="number"
-                  min="12"
-                  max="120"
-                  value={profile.age}
-                  onChange={(e) => handleFieldChange('age', parseInt(e.target.value) || 25)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
+                  id="profile-age"
+                  type="text"
+                  inputMode="numeric"
+                  value={ageStr}
+                  onChange={(e) => handleAgeChange(e.target.value)}
+                  placeholder="25"
+                  className={`w-full px-3 py-2.5 bg-dark-inner border rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none transition-colors ${
+                    fieldErrors.age
+                      ? 'border-coral-primary focus:border-coral-primary focus:ring-1 focus:ring-coral-primary'
+                      : 'border-dark-border focus:border-lime-primary focus:ring-1 focus:ring-lime-primary'
+                  }`}
+                  aria-invalid={!!fieldErrors.age}
+                  aria-describedby={fieldErrors.age ? 'age-error' : undefined}
                 />
+                {fieldErrors.age && (
+                  <p id="age-error" className="text-xs text-coral-primary mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    {fieldErrors.age}
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="profile-sex" className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Biological Sex
                 </label>
                 <select
-                  value={profile.sex}
-                  onChange={(e) => handleFieldChange('sex', e.target.value as Sex)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                  id="profile-sex"
+                  value={sex}
+                  onChange={(e) => handleSexChange(e.target.value as Sex)}
+                  className="w-full px-3 py-2.5 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary transition-colors"
                 >
                   <option value="MALE">Male</option>
                   <option value="FEMALE">Female</option>
@@ -289,316 +640,426 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
               </div>
             </div>
 
+            {/* Height & Weight */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Height (cm)
+                <label htmlFor="profile-height" className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Height <span className="text-slate-400 font-normal">(cm)</span>
                 </label>
                 <input
-                  type="number"
-                  min="80"
-                  max="250"
-                  value={profile.height_cm}
-                  onChange={(e) => handleFieldChange('height_cm', parseFloat(e.target.value) || 170)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
+                  id="profile-height"
+                  type="text"
+                  inputMode="decimal"
+                  value={heightStr}
+                  onChange={(e) => handleHeightChange(e.target.value)}
+                  placeholder="175"
+                  className={`w-full px-3 py-2.5 bg-dark-inner border rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none transition-colors ${
+                    fieldErrors.height_cm
+                      ? 'border-coral-primary focus:border-coral-primary focus:ring-1 focus:ring-coral-primary'
+                      : 'border-dark-border focus:border-lime-primary focus:ring-1 focus:ring-lime-primary'
+                  }`}
+                  aria-invalid={!!fieldErrors.height_cm}
+                  aria-describedby={fieldErrors.height_cm ? 'height-error' : undefined}
                 />
+                {fieldErrors.height_cm && (
+                  <p id="height-error" className="text-xs text-coral-primary mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    {fieldErrors.height_cm}
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Weight (kg)
+                <label htmlFor="profile-weight" className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Weight <span className="text-slate-400 font-normal">(kg)</span>
                 </label>
                 <input
-                  type="number"
-                  step="0.1"
-                  min="30"
-                  max="300"
-                  value={profile.weight_kg}
-                  onChange={(e) => handleFieldChange('weight_kg', parseFloat(e.target.value) || 70)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
+                  id="profile-weight"
+                  type="text"
+                  inputMode="decimal"
+                  value={weightStr}
+                  onChange={(e) => handleWeightChange(e.target.value)}
+                  placeholder="70"
+                  className={`w-full px-3 py-2.5 bg-dark-inner border rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none transition-colors ${
+                    fieldErrors.weight_kg
+                      ? 'border-coral-primary focus:border-coral-primary focus:ring-1 focus:ring-coral-primary'
+                      : 'border-dark-border focus:border-lime-primary focus:ring-1 focus:ring-lime-primary'
+                  }`}
+                  aria-invalid={!!fieldErrors.weight_kg}
+                  aria-describedby={fieldErrors.weight_kg ? 'weight-error' : undefined}
                 />
+                {fieldErrors.weight_kg && (
+                  <p id="weight-error" className="text-xs text-coral-primary mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    {fieldErrors.weight_kg}
+                  </p>
+                )}
               </div>
             </div>
 
+            {/* Activity Level */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="profile-activity" className="block text-xs font-semibold text-slate-300 mb-1.5">
                 Activity Level
               </label>
               <select
-                value={profile.activity_level}
-                onChange={(e) => handleFieldChange('activity_level', e.target.value as ActivityLevel)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                id="profile-activity"
+                value={activityLevel}
+                onChange={(e) => handleActivityChange(e.target.value as ActivityLevel)}
+                className="w-full px-3 py-2.5 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary transition-colors"
               >
-                <option value="SEDENTARY">Sedentary (Little or no structured exercise)</option>
-                <option value="LIGHTLY_ACTIVE">Lightly Active (Light exercise 1–3 days/wk)</option>
-                <option value="MODERATELY_ACTIVE">Moderately Active (Moderate exercise 3–5 days/wk)</option>
-                <option value="VERY_ACTIVE">Very Active (Hard exercise 6–7 days/wk)</option>
-                <option value="EXTRA_ACTIVE">Extra Active (Very demanding physical labor/training)</option>
+                <option value="SEDENTARY">Sedentary (Little or no exercise • 1.2x)</option>
+                <option value="LIGHTLY_ACTIVE">Lightly Active (Exercise 1–3 days/wk • 1.375x)</option>
+                <option value="MODERATELY_ACTIVE">Moderately Active (Exercise 3–5 days/wk • 1.55x)</option>
+                <option value="VERY_ACTIVE">Very Active (Hard exercise 6–7 days/wk • 1.725x)</option>
+                <option value="EXTRA_ACTIVE">Extra Active (Very heavy physical training • 1.9x)</option>
               </select>
             </div>
 
+            {/* Nutrition Goal */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="profile-goal" className="block text-xs font-semibold text-slate-300 mb-1.5">
                 Primary Nutrition Goal
               </label>
               <select
-                value={profile.goal}
-                onChange={(e) => handleFieldChange('goal', e.target.value as UserGoal)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-medium"
+                id="profile-goal"
+                value={goal}
+                onChange={(e) => handleGoalChange(e.target.value as UserGoal)}
+                className="w-full px-3 py-2.5 bg-dark-inner border border-dark-border rounded-xl text-sm text-white font-medium focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary transition-colors"
               >
                 <option value="WEIGHT_LOSS">Weight Loss (-400 kcal deficit, 1.4g/kg protein)</option>
-                <option value="MAINTENANCE">Weight Maintenance (Balanced energy, 1.2g/kg protein)</option>
+                <option value="MAINTENANCE">Maintenance (Caloric balance, 1.2g/kg protein)</option>
                 <option value="WEIGHT_GAIN">Weight Gain (+350 kcal surplus, 1.4g/kg protein)</option>
-                <option value="MUSCLE_GAIN">Muscle Gain (+250 kcal surplus, 1.8g/kg protein)</option>
-                <option value="GENERAL_HEALTH">General Health (Balanced maintenance, 1.1g/kg protein)</option>
+                <option value="MUSCLE_GAIN">Muscle Hypertrophy (+250 kcal surplus, 1.8g/kg protein)</option>
+                <option value="GENERAL_HEALTH">General Health (Equilibrium, 1.1g/kg protein)</option>
               </select>
             </div>
 
+            {/* Error Message */}
             {errorMessage && (
-              <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
-                {errorMessage}
-              </p>
-            )}
-
-            {saveSuccess && (
-              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                <span>Profile and personalized daily targets updated successfully!</span>
+              <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl flex items-start gap-2.5 text-xs text-coral-primary">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{errorMessage}</span>
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition shadow-sm flex items-center justify-center gap-2"
-            >
-              {loading ? 'Saving...' : currentUser ? 'Save & Update Targets' : 'Save Profile (Sign in or Demo)'}
-            </button>
+            {/* Success Message */}
+            {saveSuccess && (
+              <div className="p-3 bg-lime-dim border border-lime-primary/30 rounded-xl flex items-center gap-2.5 text-xs text-lime-primary font-medium animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>Profile and daily nutrition targets saved successfully!</span>
+              </div>
+            )}
+
+            {/* Submit Action */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 bg-lime-primary hover:bg-lime-hover disabled:opacity-50 text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Recalculating & Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Save Profile & Update Targets</span>
+                  </>
+                )}
+              </button>
+            </div>
           </form>
         </div>
 
-        {/* Target Cards & Formulas (7 cols) */}
+        {/* Target Insights Column (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
-          {/* Target Energy Summary Card */}
-          <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-6 shadow-md border border-slate-700">
-            <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wider font-semibold text-emerald-400">
-                Mifflin-St Jeor Energy Balance
-              </span>
-              <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
-                Deterministic Engine
-              </span>
-            </div>
+          {targets ? (
+            <>
+              {/* Daily Calorie Target Hero Card */}
+              <div className="bg-gradient-to-br from-dark-card to-dark-elevated rounded-2xl border border-dark-border p-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-lime-primary/5 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-700">
-              <div>
-                <p className="text-xs text-slate-400">Estimated BMR</p>
-                <p className="text-xl font-bold text-white mt-0.5">
-                  ~{targets?.bmr ?? '—'} <span className="text-xs font-normal text-slate-400">kcal</span>
-                </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Basal metabolic rate</p>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Flame className="w-5 h-5 text-lime-primary" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Calculated Daily Intake Budget
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-lime-primary bg-lime-dim px-2.5 py-0.5 rounded-full border border-lime-primary/20">
+                    Active Target
+                  </span>
+                </div>
+
+                <div className="flex items-baseline gap-3 mb-6">
+                  <span className="text-4xl sm:text-5xl font-black text-white tracking-tight">
+                    {targets.calorie_target}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-400">kcal / day</span>
+                </div>
+
+                {/* Metabolic Breakdown Cards */}
+                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dark-border">
+                  <div className="bg-dark-inner/80 p-3.5 rounded-xl border border-dark-border">
+                    <span className="text-[11px] text-slate-400 block mb-0.5 font-medium">
+                      BMR (Basal Metabolic Rate)
+                    </span>
+                    <span className="text-lg font-bold text-slate-200">
+                      {targets.bmr} <span className="text-xs font-normal text-slate-400">kcal</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">Energy at rest</span>
+                  </div>
+
+                  <div className="bg-dark-inner/80 p-3.5 rounded-xl border border-dark-border">
+                    <span className="text-[11px] text-slate-400 block mb-0.5 font-medium">
+                      TDEE (Total Daily Energy)
+                    </span>
+                    <span className="text-lg font-bold text-slate-200">
+                      {targets.tdee} <span className="text-xs font-normal text-slate-400">kcal</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">With activity level</span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <p className="text-xs text-slate-400">Maintenance (TDEE)</p>
-                <p className="text-xl font-bold text-white mt-0.5">
-                  ~{targets?.tdee ?? '—'} <span className="text-xs font-normal text-slate-400">kcal</span>
-                </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Energy expenditure</p>
+              {/* Macronutrient Distribution Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Protein */}
+                <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-sky-400/30 transition-colors">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-sky-400">Protein</span>
+                    <span className="text-[10px] text-slate-500 font-mono">4 kcal/g</span>
+                  </div>
+                  <div className="text-2xl font-bold text-white mb-2">
+                    {targets.protein_target_g}
+                    <span className="text-xs text-slate-400 font-normal">g</span>
+                  </div>
+                  <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-sky-400 h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, Math.round(((targets.protein_target_g * 4) / targets.calorie_target) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1.5 block">
+                    {Math.round(((targets.protein_target_g * 4) / targets.calorie_target) * 100)}% of calories
+                  </span>
+                </div>
+
+                {/* Carbohydrates */}
+                <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-amber-400/30 transition-colors">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-amber-400">Carbs</span>
+                    <span className="text-[10px] text-slate-500 font-mono">4 kcal/g</span>
+                  </div>
+                  <div className="text-2xl font-bold text-white mb-2">
+                    {targets.carbohydrates_target_g}
+                    <span className="text-xs text-slate-400 font-normal">g</span>
+                  </div>
+                  <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-amber-400 h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, Math.round(((targets.carbohydrates_target_g * 4) / targets.calorie_target) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1.5 block">
+                    {Math.round(((targets.carbohydrates_target_g * 4) / targets.calorie_target) * 100)}% of calories
+                  </span>
+                </div>
+
+                {/* Fat */}
+                <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-rose-400/30 transition-colors">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-rose-400">Fat</span>
+                    <span className="text-[10px] text-slate-500 font-mono">9 kcal/g</span>
+                  </div>
+                  <div className="text-2xl font-bold text-white mb-2">
+                    {targets.fat_target_g}
+                    <span className="text-xs text-slate-400 font-normal">g</span>
+                  </div>
+                  <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-rose-400 h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, Math.round(((targets.fat_target_g * 9) / targets.calorie_target) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1.5 block">
+                    {Math.round(((targets.fat_target_g * 9) / targets.calorie_target) * 100)}% of calories
+                  </span>
+                </div>
+
+                {/* Dietary Fiber */}
+                <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-lime-primary/30 transition-colors">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-lime-primary">Fiber</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Floor</span>
+                  </div>
+                  <div className="text-2xl font-bold text-white mb-2">
+                    {targets.fiber_target_g}
+                    <span className="text-xs text-slate-400 font-normal">g</span>
+                  </div>
+                  <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-lime-primary h-full rounded-full w-full" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1.5 block">
+                    ≥14g per 1,000 kcal
+                  </span>
+                </div>
               </div>
 
-              <div className="bg-emerald-950/50 p-2.5 rounded-xl border border-emerald-500/30">
-                <p className="text-xs text-emerald-300 font-semibold">Estimated Daily Target</p>
-                <p className="text-2xl font-black text-emerald-400 mt-0.5">
-                  ~{targets?.calorie_target ?? '—'}{' '}
-                  <span className="text-xs font-normal text-emerald-300">kcal</span>
-                </p>
-                <p className="text-[10px] text-emerald-200 mt-0.5">Goal-adjusted target</p>
+              {/* Safety Warning (if triggered) */}
+              {targets.safety_warning && (
+                <div className="p-4 bg-coral-dim border border-coral-primary/40 rounded-xl flex items-start gap-3 text-xs text-coral-primary">
+                  <ShieldAlert className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block mb-0.5">Clinical Safety Notice</span>
+                    <p className="leading-relaxed">{targets.safety_warning}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Educational Disclaimer */}
+              <div className="p-4 bg-dark-card rounded-xl border border-dark-border flex items-start gap-3 text-xs text-slate-400">
+                <Info className="w-4 h-4 flex-shrink-0 text-slate-500 mt-0.5" />
+                <p className="leading-relaxed">{targets.disclaimer}</p>
               </div>
-            </div>
-          </div>
-
-          {/* Macro Targets Breakdown */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-3">
-              <Dumbbell className="w-4 h-4 text-emerald-600" />
-              Target Macronutrient Distribution
-            </h3>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-100">
-                <span className="text-xs text-emerald-800 font-semibold">Protein</span>
-                <p className="text-lg font-bold text-emerald-900 mt-1">
-                  {targets?.protein_target_g ?? '—'} g
-                </p>
-                <p className="text-[11px] text-emerald-700 mt-0.5">
-                  {profile.goal === 'MUSCLE_GAIN'
-                    ? '1.8 g/kg bodyweight'
-                    : profile.goal === 'GENERAL_HEALTH'
-                    ? '1.1 g/kg bodyweight'
-                    : '1.2–1.4 g/kg bodyweight'}
-                </p>
-              </div>
-
-              <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-100">
-                <span className="text-xs text-amber-800 font-semibold">Carbohydrates</span>
-                <p className="text-lg font-bold text-amber-900 mt-1">
-                  {targets?.carbohydrates_target_g ?? '—'} g
-                </p>
-                <p className="text-[11px] text-amber-700 mt-0.5">Primary energy source</p>
-              </div>
-
-              <div className="bg-rose-50/70 p-3 rounded-xl border border-rose-100">
-                <span className="text-xs text-rose-800 font-semibold">Healthy Fat</span>
-                <p className="text-lg font-bold text-rose-900 mt-1">
-                  {targets?.fat_target_g ?? '—'} g
-                </p>
-                <p className="text-[11px] text-rose-700 mt-0.5">25% of target energy</p>
-              </div>
-
-              <div className="bg-teal-50/70 p-3 rounded-xl border border-teal-100">
-                <span className="text-xs text-teal-800 font-semibold">Dietary Fiber</span>
-                <p className="text-lg font-bold text-teal-900 mt-1">
-                  {targets?.fiber_target_g ?? '—'} g
-                </p>
-                <p className="text-[11px] text-teal-700 mt-0.5">≥14g per 1000 kcal</p>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 flex items-center gap-1.5">
-              <Scale className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-              <span>
-                Internal caloric consistency enforced:{' '}
-                <strong className="text-slate-700">
-                  (Protein × 4) + (Carbs × 4) + (Fat × 9) ≈ Daily Target Calories
-                </strong>
-              </span>
-            </div>
-          </div>
-
-          {/* Safety Warning (if triggered) */}
-          {targets?.safety_warning && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-              <ShieldAlert className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-sm font-bold text-amber-900">Safety Guardrail Notice</h4>
-                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                  {targets.safety_warning}
-                </p>
-              </div>
+            </>
+          ) : (
+            <div className="bg-dark-card rounded-2xl border border-dark-border p-12 text-center space-y-3">
+              <Loader2 className="w-8 h-8 text-lime-primary animate-spin mx-auto" />
+              <p className="text-sm text-slate-400">Computing energy and macro targets...</p>
             </div>
           )}
-
-          {/* Transparent Medical Disclaimer Banner */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-start gap-3">
-            <Info className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <h4 className="text-xs font-semibold text-slate-800">
-                Information & Educational Target Disclaimer
-              </h4>
-              <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                {targets?.disclaimer ||
-                  'Estimated daily target for informational and educational purposes only. Not a medical diagnosis or nutritional prescription.'}
-              </p>
-            </div>
-          </div>
         </div>
       </div>
 
       {/* Auth Modal */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">
-                {authMode === 'login' ? 'Sign In to NutriLens' : 'Create NutriLens Account'}
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-dark-card rounded-2xl border border-dark-border max-w-md w-full p-6 shadow-2xl relative space-y-5">
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-2">
+                <LogIn className="w-3.5 h-3.5" />
+                Authentication
+              </div>
+              <h3 className="text-xl font-bold text-white">
+                {authMode === 'login' ? 'Welcome Back' : 'Create an Account'}
               </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Save your personal profile and sync nutrition targets to the cloud.
+              </p>
+            </div>
+
+            {/* Mode Switch Tabs */}
+            <div className="grid grid-cols-2 bg-dark-inner p-1 rounded-xl border border-dark-border text-xs font-semibold">
               <button
-                onClick={() => setShowAuthModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm"
+                type="button"
+                onClick={() => setAuthMode('login')}
+                className={`py-2 rounded-lg transition-colors ${
+                  authMode === 'login' ? 'bg-dark-card text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                }`}
               >
-                ✕
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('register')}
+                className={`py-2 rounded-lg transition-colors ${
+                  authMode === 'register' ? 'bg-dark-card text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Register
               </button>
             </div>
 
-            <form onSubmit={handleAuthSubmit} className="space-y-4 mt-4">
+            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
               {authMode === 'register' && (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Name</label>
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Your Name"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    placeholder="Your name"
+                    className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
                   />
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Email</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
+                  className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
+                  className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
                 />
               </div>
 
               {authError && (
-                <p className="text-xs text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-200">
-                  {authError}
-                </p>
+                <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl text-xs text-coral-primary flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{authError}</span>
+                </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition shadow-sm"
+                className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
               >
-                {loading
-                  ? 'Please wait...'
-                  : authMode === 'login'
-                  ? 'Sign In & Save Profile'
-                  : 'Register Account & Save Profile'}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <span>{authMode === 'login' ? 'Sign In & Save' : 'Create Account & Save'}</span>
               </button>
-
-              <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                  className="text-emerald-600 hover:underline font-medium"
-                >
-                  {authMode === 'login'
-                    ? "Don't have an account? Register"
-                    : 'Already registered? Sign In'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCreateDemoUser}
-                  className="text-slate-600 hover:text-slate-900 font-semibold underline"
-                >
-                  Quick Demo User
-                </button>
-              </div>
             </form>
+
+            <div className="relative text-center my-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-dark-border" />
+              </div>
+              <span className="relative px-3 bg-dark-card text-[11px] text-slate-500 uppercase tracking-wider">
+                Or
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCreateDemoUser}
+              disabled={loading}
+              className="w-full py-2.5 bg-dark-inner hover:bg-dark-cardHover border border-dark-border text-slate-200 font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2"
+            >
+              <Sparkles className="w-4 h-4 text-lime-primary" />
+              <span>Continue with Instant Demo User</span>
+            </button>
           </div>
         </div>
       )}

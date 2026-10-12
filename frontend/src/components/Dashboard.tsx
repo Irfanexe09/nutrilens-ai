@@ -15,6 +15,7 @@ import {
   BarChart3,
   History,
   LayoutDashboard,
+  Loader2,
 } from 'lucide-react';
 import { api } from '../services/api';
 import {
@@ -118,34 +119,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
   });
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
       {/* Top Banner & Date Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-dark-border gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-              Phase 6: Tracking & Analytics
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
+              Nutrition Intelligence Dashboard
             </span>
             {isToday && (
-              <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 font-semibold">
+              <span className="text-[11px] bg-dark-card text-slate-300 px-2.5 py-0.5 rounded-full border border-dark-border font-semibold">
                 Today
               </span>
             )}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1">
-            Nutrition Tracking Dashboard
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Daily Intake & Fuel Metrics
           </h1>
-          <p className="text-slate-600 text-xs sm:text-sm mt-0.5">
-            Deterministic daily intake, weekly trends, and auditable meal history.
+          <p className="text-slate-400 text-xs sm:text-sm mt-0.5">
+            Deterministic daily calories, macro ratios, and meal timeline.
           </p>
         </div>
 
-        {/* Date Selector & Primary Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center bg-white border border-slate-300 rounded-xl p-1 shadow-2xs">
+        {/* Date Selector & Primary Action */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center bg-dark-inner border border-dark-border rounded-xl p-1 shadow-sm">
             <button
               onClick={() => shiftDate(-1)}
-              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600"
+              className="p-1.5 hover:bg-dark-card rounded-lg text-slate-300 hover:text-white transition-colors"
               title="Previous Day"
               aria-label="Previous Day"
             >
@@ -160,13 +161,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   setSelectedDate(e.target.value);
                 }
               }}
-              className="text-xs font-semibold text-slate-700 bg-transparent px-2 py-1 focus:outline-none"
+              className="text-xs font-semibold text-white bg-transparent px-2 py-1 focus:outline-none"
               aria-label="Select Date"
             />
             <button
               onClick={() => shiftDate(1)}
               disabled={isFuturePrevented}
-              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent"
+              className="p-1.5 hover:bg-dark-card rounded-lg text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               title={isFuturePrevented ? 'Future dates not supported' : 'Next Day'}
               aria-label="Next Day"
             >
@@ -176,18 +177,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           <button
             onClick={onLogMealClick}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition shadow-xs"
+            className="flex items-center gap-2 px-4 py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark rounded-xl text-xs sm:text-sm font-extrabold transition-all shadow-lg shadow-lime-primary/10"
           >
             <PlusCircle className="w-4 h-4" />
-            Scan / Log Meal
+            <span>Scan / Log Meal</span>
           </button>
         </div>
       </div>
 
-      {/* Quick 7-Day Quick Strip */}
+      {/* Quick 7-Day Jump Strip */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-          Quick Jump:
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1">
+          Jump:
         </span>
         {quickDays.map((dStr) => {
           const dObj = new Date(dStr);
@@ -199,71 +200,73 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               key={dStr}
               onClick={() => setSelectedDate(dStr)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 flex items-center gap-1 ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 flex items-center gap-1.5 ${
                 isSelected
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                  ? 'bg-lime-primary text-lime-dark font-bold shadow-md shadow-lime-primary/10'
+                  : 'bg-dark-card hover:bg-dark-cardHover text-slate-300 border border-dark-border'
               }`}
             >
               <span>{dayName}</span>
-              <span className={`text-[10px] ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
+              <span className={`text-[10px] ${isSelected ? 'text-lime-900 font-bold' : 'text-slate-500'}`}>
                 {dStr.slice(5)}
               </span>
               {isCurrentToday && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-lime-900' : 'bg-lime-primary'}`} />
               )}
             </button>
           );
         })}
       </div>
 
-      {/* Primary Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200">
+      {/* Sub-Tabs: Daily | Weekly | History */}
+      <div className="flex items-center gap-3 border-b border-dark-border">
         <button
           onClick={() => setActiveSubTab('daily')}
-          className={`flex items-center gap-2 pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition ${
+          className={`flex items-center gap-2 pb-3 px-2 text-xs sm:text-sm font-bold border-b-2 transition-all ${
             activeSubTab === 'daily'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-lime-primary text-lime-primary'
+              : 'border-transparent text-slate-400 hover:text-white'
           }`}
         >
           <LayoutDashboard className="w-4 h-4" />
-          Today's Intake & Timeline
+          <span>Intake & Timeline</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('weekly')}
-          className={`flex items-center gap-2 pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition ${
+          className={`flex items-center gap-2 pb-3 px-2 text-xs sm:text-sm font-bold border-b-2 transition-all ${
             activeSubTab === 'weekly'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-lime-primary text-lime-primary'
+              : 'border-transparent text-slate-400 hover:text-white'
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          7-Day Analytics & Trends
+          <span>7-Day Trends</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('history')}
-          className={`flex items-center gap-2 pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition ${
+          className={`flex items-center gap-2 pb-3 px-2 text-xs sm:text-sm font-bold border-b-2 transition-all ${
             activeSubTab === 'history'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-lime-primary text-lime-primary'
+              : 'border-transparent text-slate-400 hover:text-white'
           }`}
         >
           <History className="w-4 h-4" />
-          Meal History Log
+          <span>Meal History</span>
         </button>
       </div>
 
       {/* Error Display */}
       {error && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs text-rose-800 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{error}</span>
+        <div className="bg-coral-dim border border-coral-primary/30 rounded-2xl p-4 text-xs text-coral-primary flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
           <button
             onClick={loadDailyMetrics}
-            className="ml-auto underline font-bold"
+            className="underline font-bold hover:text-white transition-colors"
           >
             Retry
           </button>
@@ -273,32 +276,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* SUB-TAB 1: DAILY INTAKE & TIMELINE */}
       {activeSubTab === 'daily' && (
         loadingDaily ? (
-          <div className="py-24 text-center">
-            <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs text-slate-500">Loading daily metrics...</p>
+          <div className="py-24 text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-lime-primary animate-spin mx-auto" />
+            <p className="text-xs text-slate-400 font-mono">Loading daily metrics...</p>
           </div>
         ) : dailyData ? (
           <div className="space-y-6">
-            {/* Energy Expenditure Progress Card */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            {/* Energy Expenditure Progress Hero Card */}
+            <div className="bg-gradient-to-br from-dark-card to-dark-elevated rounded-2xl border border-dark-border p-6 shadow-xl space-y-5 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-lime-primary/5 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-dark-border">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shadow-2xs">
+                  <div className="w-11 h-11 rounded-xl bg-lime-dim text-lime-primary border border-lime-primary/20 flex items-center justify-center shadow-sm">
                     <Flame className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Energy Balance & Daily Budget
+                    <h3 className="text-base font-bold text-white">
+                      Daily Caloric Budget & Balance
                     </h3>
-                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-                      <span>Target: ~{Math.round(dailyData.target.calorie_target)} kcal / day</span>
-                      <span>·</span>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+                      <span>Target: ~{Math.round(dailyData.target.calorie_target)} kcal</span>
+                      <span>•</span>
                       <button
                         onClick={onConfigureProfileClick}
-                        className="text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1"
+                        className="text-lime-primary hover:underline font-semibold flex items-center gap-1"
                       >
                         <Sliders className="w-3 h-3" />
-                        Adjust Goal
+                        <span>Adjust Goals</span>
                       </button>
                     </div>
                   </div>
@@ -306,81 +311,80 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {/* Status Badge */}
                 <div
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 self-start sm:self-auto ${
+                  className={`px-3 py-1.5 rounded-full border text-xs font-bold flex items-center gap-2 self-start sm:self-auto ${
                     dailyData.overage.is_over_target
-                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      ? 'bg-coral-dim text-coral-primary border-coral-primary/30'
+                      : 'bg-lime-dim text-lime-primary border-lime-primary/30'
                   }`}
                 >
-                  <TrendingUp className="w-4 h-4" />
+                  <TrendingUp className="w-3.5 h-3.5" />
                   <span>{dailyData.overage.status_message}</span>
                 </div>
               </div>
 
-              {/* Calorie Stats Grid */}
+              {/* 3-Column Stats Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <span className="text-xs font-semibold text-slate-500">Consumed Today</span>
-                  <p className="text-2xl font-black text-slate-900 mt-0.5">
+                {/* Consumed Today */}
+                <div className="bg-dark-inner p-4 rounded-xl border border-dark-border space-y-2">
+                  <span className="text-xs font-semibold text-slate-400">Consumed Today</span>
+                  <p className="text-2xl font-black text-white">
                     ~{Math.round(dailyData.consumed.calories)}{' '}
-                    <span className="text-xs font-normal text-slate-500">kcal</span>
+                    <span className="text-xs font-normal text-slate-400">kcal</span>
                   </p>
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-3">
+                  <div className="w-full bg-dark-bg h-2 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        dailyData.overage.is_over_target ? 'bg-amber-500' : 'bg-emerald-500'
+                        dailyData.overage.is_over_target ? 'bg-coral-primary' : 'bg-lime-primary'
                       }`}
                       style={{ width: `${Math.min(100, dailyData.percentages.calories)}%` }}
-                      role="progressbar"
-                      aria-valuenow={dailyData.percentages.calories}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1 text-right">
+                  <p className="text-[11px] text-slate-500 text-right">
                     {dailyData.percentages.calories}% of daily target
                   </p>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <span className="text-xs font-semibold text-slate-500">Estimated Target</span>
-                  <p className="text-2xl font-black text-slate-900 mt-0.5">
+                {/* Target */}
+                <div className="bg-dark-inner p-4 rounded-xl border border-dark-border space-y-2">
+                  <span className="text-xs font-semibold text-slate-400">Estimated Target</span>
+                  <p className="text-2xl font-black text-white">
                     ~{Math.round(dailyData.target.calorie_target)}{' '}
-                    <span className="text-xs font-normal text-slate-500">kcal</span>
+                    <span className="text-xs font-normal text-slate-400">kcal</span>
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-3">
-                    Mifflin-St Jeor BMR & personal activity multiplier
+                  <p className="text-[11px] text-slate-500 pt-3">
+                    Calculated via Mifflin-St Jeor equation & activity factor
                   </p>
                 </div>
 
+                {/* Remaining / Overage */}
                 <div
-                  className={`p-4 rounded-xl border ${
+                  className={`p-4 rounded-xl border space-y-2 ${
                     dailyData.overage.is_over_target
-                      ? 'bg-amber-50/50 border-amber-200'
-                      : 'bg-emerald-50/50 border-emerald-200'
+                      ? 'bg-coral-dim/30 border-coral-primary/30'
+                      : 'bg-lime-dim/20 border-lime-primary/30'
                   }`}
                 >
                   <span
                     className={`text-xs font-semibold ${
-                      dailyData.overage.is_over_target ? 'text-amber-800' : 'text-emerald-700'
+                      dailyData.overage.is_over_target ? 'text-coral-primary' : 'text-lime-primary'
                     }`}
                   >
                     {dailyData.overage.is_over_target ? 'Amount Above Target' : 'Remaining Budget'}
                   </span>
                   <p
-                    className={`text-2xl font-black mt-0.5 ${
-                      dailyData.overage.is_over_target ? 'text-amber-900' : 'text-emerald-800'
+                    className={`text-2xl font-black ${
+                      dailyData.overage.is_over_target ? 'text-coral-primary' : 'text-white'
                     }`}
                   >
                     {dailyData.overage.is_over_target
                       ? `+${Math.round(dailyData.overage.calories)}`
                       : `~${Math.round(dailyData.remaining.calories)}`}{' '}
-                    <span className="text-xs font-normal">kcal</span>
+                    <span className="text-xs font-normal text-slate-400">kcal</span>
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-3">
+                  <p className="text-[11px] text-slate-400 pt-3">
                     {dailyData.overage.is_over_target
-                      ? 'Total exceeds target budget for today'
-                      : 'Available within estimated target'}
+                      ? 'Consumed calories exceed daily target'
+                      : 'Available caloric budget remaining'}
                   </p>
                 </div>
               </div>
@@ -389,143 +393,127 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {/* Macronutrients Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Protein */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-2">
+              <div className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-sm space-y-2 hover:border-sky-400/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Dumbbell className="w-4 h-4 text-emerald-600" />
-                    <h4 className="text-xs font-bold text-slate-900">Protein</h4>
+                    <Dumbbell className="w-4 h-4 text-sky-400" />
+                    <h4 className="text-xs font-bold text-white">Protein</h4>
                   </div>
-                  <span className="text-xs font-bold text-emerald-700">
+                  <span className="text-xs font-bold text-sky-400 font-mono">
                     {dailyData.percentages.protein}%
                   </span>
                 </div>
-                <p className="text-xl font-bold text-slate-900">
+                <p className="text-xl font-bold text-white">
                   {dailyData.consumed.protein_g}g{' '}
-                  <span className="text-xs font-normal text-slate-500">
+                  <span className="text-xs font-normal text-slate-400">
                     / {dailyData.target.protein_target_g}g
                   </span>
                 </p>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
                   <div
-                    className="bg-emerald-500 h-full rounded-full transition-all"
+                    className="bg-sky-400 h-full rounded-full transition-all"
                     style={{ width: `${Math.min(100, dailyData.percentages.protein)}%` }}
-                    role="progressbar"
-                    aria-valuenow={dailyData.percentages.protein}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
                   />
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {dailyData.remaining.protein_g > 0
                     ? `${dailyData.remaining.protein_g}g remaining`
-                    : 'Target reached!'}
+                    : 'Target fulfilled!'}
                 </p>
               </div>
 
               {/* Carbohydrates */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-2">
+              <div className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-sm space-y-2 hover:border-amber-400/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Wheat className="w-4 h-4 text-amber-600" />
-                    <h4 className="text-xs font-bold text-slate-900">Carbs</h4>
+                    <Wheat className="w-4 h-4 text-amber-400" />
+                    <h4 className="text-xs font-bold text-white">Carbs</h4>
                   </div>
-                  <span className="text-xs font-bold text-amber-700">
+                  <span className="text-xs font-bold text-amber-400 font-mono">
                     {dailyData.percentages.carbohydrates}%
                   </span>
                 </div>
-                <p className="text-xl font-bold text-slate-900">
+                <p className="text-xl font-bold text-white">
                   {dailyData.consumed.carbohydrates_g}g{' '}
-                  <span className="text-xs font-normal text-slate-500">
+                  <span className="text-xs font-normal text-slate-400">
                     / {dailyData.target.carbohydrates_target_g}g
                   </span>
                 </p>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
                   <div
-                    className="bg-amber-500 h-full rounded-full transition-all"
+                    className="bg-amber-400 h-full rounded-full transition-all"
                     style={{ width: `${Math.min(100, dailyData.percentages.carbohydrates)}%` }}
-                    role="progressbar"
-                    aria-valuenow={dailyData.percentages.carbohydrates}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
                   />
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {dailyData.remaining.carbohydrates_g > 0
                     ? `${dailyData.remaining.carbohydrates_g}g remaining`
-                    : 'Target reached!'}
+                    : 'Target fulfilled!'}
                 </p>
               </div>
 
               {/* Fat */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-2">
+              <div className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-sm space-y-2 hover:border-rose-400/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Droplet className="w-4 h-4 text-rose-600" />
-                    <h4 className="text-xs font-bold text-slate-900">Fat</h4>
+                    <Droplet className="w-4 h-4 text-rose-400" />
+                    <h4 className="text-xs font-bold text-white">Fat</h4>
                   </div>
-                  <span className="text-xs font-bold text-rose-700">
+                  <span className="text-xs font-bold text-rose-400 font-mono">
                     {dailyData.percentages.fat}%
                   </span>
                 </div>
-                <p className="text-xl font-bold text-slate-900">
+                <p className="text-xl font-bold text-white">
                   {dailyData.consumed.fat_g}g{' '}
-                  <span className="text-xs font-normal text-slate-500">
+                  <span className="text-xs font-normal text-slate-400">
                     / {dailyData.target.fat_target_g}g
                   </span>
                 </p>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
                   <div
-                    className="bg-rose-500 h-full rounded-full transition-all"
+                    className="bg-rose-400 h-full rounded-full transition-all"
                     style={{ width: `${Math.min(100, dailyData.percentages.fat)}%` }}
-                    role="progressbar"
-                    aria-valuenow={dailyData.percentages.fat}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
                   />
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {dailyData.remaining.fat_g > 0
                     ? `${dailyData.remaining.fat_g}g remaining`
-                    : 'Target reached!'}
+                    : 'Target fulfilled!'}
                 </p>
               </div>
 
-              {/* Dietary Fiber */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-2">
+              {/* Fiber */}
+              <div className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-sm space-y-2 hover:border-lime-primary/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Salad className="w-4 h-4 text-teal-600" />
-                    <h4 className="text-xs font-bold text-slate-900">Fiber</h4>
+                    <Salad className="w-4 h-4 text-lime-primary" />
+                    <h4 className="text-xs font-bold text-white">Fiber</h4>
                   </div>
-                  <span className="text-xs font-bold text-teal-700">
+                  <span className="text-xs font-bold text-lime-primary font-mono">
                     {dailyData.percentages.fiber}%
                   </span>
                 </div>
-                <p className="text-xl font-bold text-slate-900">
+                <p className="text-xl font-bold text-white">
                   {dailyData.consumed.fiber_g}g{' '}
-                  <span className="text-xs font-normal text-slate-500">
+                  <span className="text-xs font-normal text-slate-400">
                     / {dailyData.target.fiber_target_g}g
                   </span>
                 </p>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-dark-inner h-1.5 rounded-full overflow-hidden">
                   <div
-                    className="bg-teal-500 h-full rounded-full transition-all"
+                    className="bg-lime-primary h-full rounded-full transition-all"
                     style={{ width: `${Math.min(100, dailyData.percentages.fiber)}%` }}
-                    role="progressbar"
-                    aria-valuenow={dailyData.percentages.fiber}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
                   />
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {dailyData.remaining.fiber_g > 0
                     ? `${dailyData.remaining.fiber_g}g remaining`
-                    : 'Target reached!'}
+                    : 'Target fulfilled!'}
                 </p>
               </div>
             </div>
 
-            {/* Meal Timeline Slots */}
+            {/* Meal Timeline */}
             <MealTimeline
               timeline={dailyData.timeline}
               onLogMeal={onLogMealClick}
@@ -535,19 +523,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
         ) : null
       )}
 
-      {/* SUB-TAB 2: 7-DAY ANALYTICS & TRENDS */}
+      {/* SUB-TAB 2: 7-DAY TRENDS */}
       {activeSubTab === 'weekly' && (
         loadingWeekly ? (
-          <div className="py-24 text-center">
-            <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs text-slate-500">Compiling 7-day analytics...</p>
+          <div className="py-24 text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-lime-primary animate-spin mx-auto" />
+            <p className="text-xs text-slate-400 font-mono">Compiling 7-day trend analytics...</p>
           </div>
         ) : weeklyData ? (
           <WeeklyAnalyticsChart data={weeklyData} />
         ) : null
       )}
 
-      {/* SUB-TAB 3: MEAL HISTORY LOG */}
+      {/* SUB-TAB 3: MEAL HISTORY */}
       {activeSubTab === 'history' && (
         <MealHistory
           onSelectMeal={(meal) => setSelectedMealDetail(meal)}
@@ -561,11 +549,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onClose={() => setSelectedMealDetail(null)}
       />
 
-      {/* Educational & Clinical Disclaimer */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-start gap-3 text-xs text-slate-600">
-        <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+      {/* Educational Notice */}
+      <div className="bg-dark-card border border-dark-border rounded-2xl p-4 flex items-start gap-3 text-xs text-slate-400">
+        <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
         <p className="leading-relaxed text-[11px]">
-          <strong>Notice:</strong> NutriLens estimates and daily targets are calculated using population formulas and verified nutritional data for informational purposes. They do not constitute medical prescriptions or diagnostic dietary advice.
+          <strong>Notice:</strong> NutriLens estimates and daily targets are calculated using verified nutritional datasets and peer-reviewed metabolic formulas. They do not constitute diagnostic medical advice or personalized clinical dietary prescriptions.
         </p>
       </div>
     </div>

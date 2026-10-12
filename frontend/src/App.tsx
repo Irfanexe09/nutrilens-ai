@@ -191,7 +191,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="min-h-screen bg-dark-bg text-slate-100 flex flex-col font-sans antialiased selection:bg-lime-dim selection:text-lime-primary">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} health={health} />
 
       <main className="flex-1">

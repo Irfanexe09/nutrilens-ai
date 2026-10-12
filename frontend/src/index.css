@@ -3,8 +3,29 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900 antialiased selection:bg-emerald-100 selection:text-emerald-900;
+    @apply bg-dark-bg text-slate-100 antialiased selection:bg-lime-primary/20 selection:text-lime-primary;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+
+  /* Custom subtle dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0A0E11;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #232D38;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
 }
+
