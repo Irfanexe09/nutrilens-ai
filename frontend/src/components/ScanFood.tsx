@@ -11,6 +11,7 @@ import {
 import { api, ApiError } from '../services/api';
 import { FoodAnalysisResponse, DetectedFoodItem } from '../types';
 import { FoodConfirmation } from './FoodConfirmation';
+import { uploadFoodImageToStorage } from '../services/firebase';
 
 interface ScanFoodProps {
   onAnalysisComplete: (
@@ -89,9 +90,19 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
 
     setIsLoading(true);
     setErrorMessage(null);
-    setLoadingStep('Multimodal vision evaluating food items and portions...');
+    setLoadingStep('Uploading food photo to cloud storage...');
 
     try {
+      // Upload to Firebase Cloud Storage for permanent storage URL
+      try {
+        const cloudUrl = await uploadFoodImageToStorage(selectedFile);
+        setPreviewUrl(cloudUrl);
+      } catch (storageErr) {
+        // Non-blocking: If rules require authentication or bucket is unconfigured, fallback gracefully to local preview
+        console.warn('Firebase Storage upload notice (continuing with local image):', storageErr);
+      }
+
+      setLoadingStep('Multimodal vision evaluating food items and portions...');
       const response = await api.analyzeImage(selectedFile);
       setAnalysisResult(response);
     } catch (err: unknown) {
