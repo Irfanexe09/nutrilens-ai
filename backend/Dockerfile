@@ -40,8 +40,12 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Copy application source code
-COPY --chown=appuser:appgroup . .
+# Copy application source code and runtime assets
+COPY --chown=appuser:appgroup app ./app
+COPY --chown=appuser:appgroup alembic ./alembic
+COPY --chown=appuser:appgroup alembic.ini .
+COPY --chown=appuser:appgroup data ./data
+COPY --chown=appuser:appgroup scripts ./scripts
 
 # Create uploads directory, make entrypoint executable, and grant ownership to appuser
 RUN mkdir -p uploads && chmod +x scripts/start.sh && chown -R appuser:appgroup /app
