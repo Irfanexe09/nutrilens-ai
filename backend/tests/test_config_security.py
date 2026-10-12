@@ -207,6 +207,18 @@ def test_cors_origins_normalization_strips_trailing_slashes():
     assert cfg.CORS_ORIGINS == ["https://nutrilens.vercel.app", "https://staging.nutrilens.app"]
 
 
+def test_gemini_model_normalization_strips_models_prefix_and_quotes():
+    """Verify that GEMINI_MODEL default is gemini-3.8-flash and leading models/ prefixes are stripped."""
+    cfg_default = Settings()
+    assert cfg_default.GEMINI_MODEL == "gemini-3.8-flash"
+
+    cfg_prefix = Settings(GEMINI_MODEL="models/gemini-3.8-flash")
+    assert cfg_prefix.GEMINI_MODEL == "gemini-3.8-flash"
+
+    cfg_quoted = Settings(GEMINI_MODEL='"models/gemini-3.8-flash"')
+    assert cfg_quoted.GEMINI_MODEL == "gemini-3.8-flash"
+
+
 def test_sanitize_db_error_redacts_password():
     """Verify that _sanitize_db_error masks plain text passwords from connection error messages."""
     from scripts.run_staging_migrations import _sanitize_db_error

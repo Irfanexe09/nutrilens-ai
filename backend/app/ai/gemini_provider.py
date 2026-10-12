@@ -42,7 +42,11 @@ class GeminiVisionAIProvider(AIProvider):
         timeout: Optional[float] = None,
     ):
         self.api_key = api_key or settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
-        self.model_name = model_name or settings.GEMINI_MODEL or "gemini-2.5-flash"
+        raw_model = model_name or settings.GEMINI_MODEL or "gemini-3.8-flash"
+        cleaned_model = str(raw_model).strip().strip("\"'")
+        if cleaned_model.startswith("models/"):
+            cleaned_model = cleaned_model[len("models/"):]
+        self.model_name = cleaned_model or "gemini-3.8-flash"
         self.timeout = timeout or settings.AI_TIMEOUT_SECONDS
 
         if self.api_key:
@@ -98,8 +102,39 @@ class GeminiVisionAIProvider(AIProvider):
             )
         except Exception as e:
             duration = round((time.time() - start_time) * 1000, 2)
-            logger.error(f"Gemini API invocation failed after {duration}ms: {e}")
-            raise AIProviderError(f"Multimodal vision provider error: {str(e)}")
+            err_str = str(e)
+
+            # Check for unavailable, deprecated, or not found model (e.g. 404 NOT_FOUND)
+            err_code = getattr(e, "code", None)
+            is_model_unavailable = (
+                err_code == 404
+                or "404" in err_str
+                or "not found" in err_str.lower()
+                or "no longer available" in err_str.lower()
+            )
+            if is_model_unavailable:
+                logger.error(
+                    f"Gemini vision model '{self.model_name}' is unavailable or deprecated after {duration}ms: {err_str}"
+                )
+                raise AIProviderConfigError(
+                    f"Configured Gemini vision model '{self.model_name}' is unavailable or deprecated. "
+                    "Please update GEMINI_MODEL to a supported vision model (e.g. 'gemini-3.8-flash')."
+                )
+
+            # Check for invalid API key / authentication failures
+            if err_code in (401, 403) or "api key" in err_str.lower() or "unauthenticated" in err_str.lower():
+                logger.error(f"Gemini authentication failed after {duration}ms.")
+                raise AIProviderConfigError(
+                    "Invalid or unauthorized Gemini API key. Please check the GEMINI_API_KEY environment variable."
+                )
+
+            # Redact any accidental API key leaks in error message
+            safe_err = err_str
+            if self.api_key and self.api_key in safe_err:
+                safe_err = safe_err.replace(self.api_key, "[REDACTED_API_KEY]")
+
+            logger.error(f"Gemini API invocation failed after {duration}ms: {safe_err}")
+            raise AIProviderError(f"Multimodal vision provider error: {safe_err}")
 
         duration_ms = round((time.time() - start_time) * 1000, 2)
         logger.info(f"Gemini API responded in {duration_ms}ms.")

@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # AI Configuration (Phase 2: Gemini multimodal vision model)
     AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
     AI_TIMEOUT_SECONDS: float = 25.0
 
     @staticmethod
@@ -115,6 +115,21 @@ class Settings(BaseSettings):
             return res if res else defaults
 
         return defaults
+
+    @field_validator("GEMINI_MODEL", mode="before")
+    @classmethod
+    def assemble_gemini_model(cls, v: Optional[str]) -> str:
+        """
+        Normalize the Gemini vision model identifier.
+        Strips surrounding whitespace, quotes, and any leading 'models/' prefix
+        to avoid accidental duplication of the prefix when passed to the SDK.
+        """
+        if not v or not isinstance(v, str) or not v.strip():
+            return "gemini-3.8-flash"
+        cleaned = v.strip().strip("\"'")
+        if cleaned.startswith("models/"):
+            cleaned = cleaned[len("models/"):]
+        return cleaned or "gemini-3.8-flash"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

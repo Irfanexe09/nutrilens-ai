@@ -159,7 +159,7 @@ class AnalysisService:
             logger.error(f"AI provider configuration error in session {session_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AI Vision Provider is not configured. Please ensure GEMINI_API_KEY is configured in your environment.",
+                detail=str(e),
             )
         except AIProviderTimeoutError as e:
             logger.error(f"AI analysis timed out in session {session_id}: {e}")

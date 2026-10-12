@@ -17,7 +17,7 @@ This guide details the runtime requirements, cloud hosting evaluation, staging c
 | `AI_PROVIDER` | **Required** | AI vision provider (`gemini` or `placeholder`). | `gemini` (or `placeholder` if offline) |
 | `GEMINI_API_KEY` | **Conditional** | Google AI Studio API key. Required if `AI_PROVIDER=gemini`. | Provision from Google AI Studio |
 | `ALLOW_PLACEHOLDER_AI` | **Optional** | Explicitly permits mock mode in staging for offline smoke tests. | `false` (default) |
-| `GEMINI_MODEL` | **Optional** | Multimodal vision model identifier. | `gemini-2.5-flash` (default) |
+| `GEMINI_MODEL` | **Optional** | Multimodal vision model identifier. | `gemini-3.8-flash` (default) |
 | `AI_TIMEOUT_SECONDS` | **Optional** | Asynchronous timeout for external Gemini vision calls. | `25.0` (default) |
 | `DEBUG` | **Optional** | FastAPI debug mode. Must remain disabled in staging. | `false` (default) |
 | `RATE_LIMIT_ANALYZE_PER_MINUTE` | **Optional** | Rate limit ceiling per client IP on `/api/analyze`. | `15` (default) |
