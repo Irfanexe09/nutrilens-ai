@@ -51,7 +51,11 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_FALLBACK_MODEL: Optional[str] = "gemini-2.0-flash"
     AI_TIMEOUT_SECONDS: float = 25.0
+    AI_MAX_RETRIES: int = 2
+    AI_RETRY_BASE_DELAY_SECONDS: float = 1.0
+    AI_RETRY_MAX_DELAY_SECONDS: float = 3.0
 
     @staticmethod
     def _clean_single_origin(origin: Any) -> str:
@@ -130,6 +134,23 @@ class Settings(BaseSettings):
         if cleaned.startswith("models/"):
             cleaned = cleaned[len("models/"):]
         return cleaned or "gemini-3.8-flash"
+
+    @field_validator("GEMINI_FALLBACK_MODEL", mode="before")
+    @classmethod
+    def assemble_gemini_fallback_model(cls, v: Optional[str]) -> Optional[str]:
+        """
+        Normalize the Gemini fallback model identifier.
+        Strips surrounding whitespace, quotes, and any leading 'models/' prefix.
+        Returns None if empty, false, null, or disabled.
+        """
+        if not v or not isinstance(v, str) or not v.strip():
+            return None
+        cleaned = v.strip().strip("\"'")
+        if cleaned.startswith("models/"):
+            cleaned = cleaned[len("models/"):]
+        if cleaned.lower() in ("none", "null", "disabled", "false", ""):
+            return None
+        return cleaned or None
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

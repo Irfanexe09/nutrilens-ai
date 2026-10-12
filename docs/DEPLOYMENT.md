@@ -50,6 +50,7 @@ Create a production `.env` file on the deployment host. **Never commit real cred
 | `AI_PROVIDER` | Multi-modal vision provider | `gemini` (or `placeholder` for offline mode) |
 | `GEMINI_API_KEY` | Google AI Studio API Key | Valid Gemini API key |
 | `GEMINI_MODEL` | Google vision model identifier | `gemini-3.8-flash` |
+| `GEMINI_FALLBACK_MODEL` | Fallback vision model on transient high-demand spikes | `gemini-2.0-flash` |
 | `RATE_LIMIT_ANALYZE_PER_MINUTE` | Per-client rate limit for vision calls | `15` |
 | `MAX_UPLOAD_SIZE_BYTES` | File upload ceiling in bytes | `10485760` (10 MB) |
 

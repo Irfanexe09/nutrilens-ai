@@ -12,6 +12,7 @@ from app.ai.factory import get_ai_provider
 from app.ai.base import (
     AIProviderError,
     AIProviderConfigError,
+    AIProviderUnavailableError,
     AIProviderTimeoutError,
     AIProviderResponseError,
 )
@@ -160,6 +161,12 @@ class AnalysisService:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=str(e),
+            )
+        except AIProviderUnavailableError as e:
+            logger.warning(f"AI vision service temporarily unavailable in session {session_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(e) or "The AI vision service is currently experiencing high demand. Please try again in a few moments.",
             )
         except AIProviderTimeoutError as e:
             logger.error(f"AI analysis timed out in session {session_id}: {e}")

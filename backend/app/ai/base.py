@@ -23,6 +23,11 @@ class AIProviderResponseError(AIProviderError):
     pass
 
 
+class AIProviderUnavailableError(AIProviderError):
+    """Raised when an AI provider or model is temporarily unavailable or experiencing high demand."""
+    pass
+
+
 @dataclass
 class EstimatedPortion:
     value: float

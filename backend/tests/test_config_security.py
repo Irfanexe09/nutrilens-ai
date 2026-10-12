@@ -219,6 +219,21 @@ def test_gemini_model_normalization_strips_models_prefix_and_quotes():
     assert cfg_quoted.GEMINI_MODEL == "gemini-3.8-flash"
 
 
+def test_gemini_fallback_model_normalization():
+    """Verify that GEMINI_FALLBACK_MODEL defaults to gemini-2.0-flash and strips models/ prefix and disabled states."""
+    cfg_default = Settings()
+    assert cfg_default.GEMINI_FALLBACK_MODEL == "gemini-2.0-flash"
+
+    cfg_prefix = Settings(GEMINI_FALLBACK_MODEL="models/gemini-2.0-flash")
+    assert cfg_prefix.GEMINI_FALLBACK_MODEL == "gemini-2.0-flash"
+
+    cfg_disabled = Settings(GEMINI_FALLBACK_MODEL="none")
+    assert cfg_disabled.GEMINI_FALLBACK_MODEL is None
+
+    cfg_empty = Settings(GEMINI_FALLBACK_MODEL="")
+    assert cfg_empty.GEMINI_FALLBACK_MODEL is None
+
+
 def test_sanitize_db_error_redacts_password():
     """Verify that _sanitize_db_error masks plain text passwords from connection error messages."""
     from scripts.run_staging_migrations import _sanitize_db_error

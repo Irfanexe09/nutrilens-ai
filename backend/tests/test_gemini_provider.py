@@ -5,12 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.ai.base import (
     AIProviderConfigError,
+    AIProviderUnavailableError,
     AIProviderTimeoutError,
     AIProviderResponseError,
     AIProviderError,
 )
 from app.ai.gemini_provider import GeminiVisionAIProvider
 from app.ai.placeholder_provider import PlaceholderAIProvider
+from google.genai.errors import ClientError, ServerError
 
 
 @pytest.mark.asyncio
@@ -275,6 +277,315 @@ async def test_analyze_endpoint_returns_503_on_unavailable_model(monkeypatch):
         detail = response.json().get("detail", "")
         assert "unavailable or deprecated" in detail.lower()
         assert "gemini-3.8-flash" in detail
+        assert "secret_test_key" not in detail
+    finally:
+        analysis_rate_limiter.reset()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_transient_503_retries_and_succeeds():
+    """Verify that a transient 503 error on the primary model is retried and succeeds."""
+    provider = GeminiVisionAIProvider(
+        api_key="test_key_transient",
+        max_retries=2,
+        retry_base_delay=0.001,
+        retry_max_delay=0.01,
+    )
+
+    mock_503 = ServerError(
+        code=503,
+        response_json={
+            "error": {
+                "code": 503,
+                "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+                "status": "UNAVAILABLE",
+            }
+        },
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "foods": [{"name": "Dal Tadka", "confidence": 0.92, "estimated_portion": {"value": 150, "unit": "g"}}],
+        "overall_confidence": 0.90,
+        "uncertainties": [],
+    })
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=[mock_503, mock_response])
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    result = await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    assert result.status == "success"
+    assert mock_aio.models.generate_content.call_count == 2
+    assert result.processing_metadata["attempts"] == 2
+    assert result.processing_metadata["fallback_used"] is False
+    assert result.processing_metadata["model"] == "gemini-3.8-flash"
+    assert len(result.detected_foods) == 1
+    assert result.detected_foods[0].name == "Dal Tadka"
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_transient_429_retries_and_succeeds():
+    """Verify that a transient 429 rate limit error is retried and succeeds."""
+    provider = GeminiVisionAIProvider(
+        api_key="test_key_429",
+        max_retries=2,
+        retry_base_delay=0.001,
+        retry_max_delay=0.01,
+    )
+
+    mock_429 = ClientError(
+        code=429,
+        response_json={"error": {"code": 429, "message": "Resource has been exhausted (rate limit).", "status": "RESOURCE_EXHAUSTED"}},
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "foods": [{"name": "Roti", "confidence": 0.95, "estimated_portion": {"value": 60, "unit": "g"}}],
+        "overall_confidence": 0.95,
+        "uncertainties": [],
+    })
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=[mock_429, mock_response])
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    result = await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    assert result.status == "success"
+    assert mock_aio.models.generate_content.call_count == 2
+    assert result.processing_metadata["attempts"] == 2
+    assert result.processing_metadata["fallback_used"] is False
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_transient_503_exhausts_retries_without_fallback():
+    """Verify that exhausting retries with no fallback raises AIProviderUnavailableError."""
+    provider = GeminiVisionAIProvider(
+        api_key="test_key_exhaust",
+        fallback_model=None,
+        max_retries=2,
+        retry_base_delay=0.001,
+        retry_max_delay=0.01,
+    )
+
+    mock_503 = ServerError(
+        code=503,
+        response_json={"error": {"code": 503, "message": "This model is currently experiencing high demand.", "status": "UNAVAILABLE"}},
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_503)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderUnavailableError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    # 1 initial + 2 retries = 3 total attempts
+    assert mock_aio.models.generate_content.call_count == 3
+    assert "currently experiencing high demand" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_transient_503_transitions_to_fallback_model():
+    """Verify that when the primary model exhausts retries on 503, the fallback model is called and succeeds."""
+    provider = GeminiVisionAIProvider(
+        api_key="test_key_fallback",
+        model_name="gemini-3.8-flash",
+        fallback_model="gemini-2.0-flash",
+        max_retries=1,
+        retry_base_delay=0.001,
+        retry_max_delay=0.01,
+    )
+
+    mock_503 = ServerError(
+        code=503,
+        response_json={"error": {"code": 503, "message": "High demand on 3.8 flash", "status": "UNAVAILABLE"}},
+    )
+
+    mock_fallback_response = MagicMock()
+    mock_fallback_response.text = json.dumps({
+        "foods": [{"name": "Vegetable Pulao", "confidence": 0.88, "estimated_portion": {"value": 200, "unit": "g"}}],
+        "overall_confidence": 0.88,
+        "uncertainties": [],
+    })
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=[mock_503, mock_503, mock_fallback_response])
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    result = await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    assert result.status == "success"
+    # Call 1: primary (3.8-flash) -> 503
+    # Call 2: primary retry (3.8-flash) -> 503
+    # Call 3: fallback (2.0-flash) -> success
+    assert mock_aio.models.generate_content.call_count == 3
+    calls = mock_aio.models.generate_content.call_args_list
+    assert calls[0].kwargs["model"] == "gemini-3.8-flash"
+    assert calls[1].kwargs["model"] == "gemini-3.8-flash"
+    assert calls[2].kwargs["model"] == "gemini-2.0-flash"
+
+    assert result.processing_metadata["model"] == "gemini-2.0-flash"
+    assert result.processing_metadata["fallback_used"] is True
+    assert result.processing_metadata["attempts"] == 3
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_both_primary_and_fallback_fail_raises_unavailable():
+    """Verify that if primary retries and the single fallback attempt both fail, AIProviderUnavailableError is raised."""
+    provider = GeminiVisionAIProvider(
+        api_key="test_key_both_fail",
+        model_name="gemini-3.8-flash",
+        fallback_model="gemini-2.0-flash",
+        max_retries=1,
+        retry_base_delay=0.001,
+        retry_max_delay=0.01,
+    )
+
+    mock_503 = ServerError(
+        code=503,
+        response_json={"error": {"code": 503, "message": "Capacity unavailable", "status": "UNAVAILABLE"}},
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_503)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderUnavailableError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    # 2 calls on primary + 1 call on fallback = 3 calls total
+    assert mock_aio.models.generate_content.call_count == 3
+    assert "currently experiencing high demand" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_permanent_401_auth_error_fails_immediately_without_retry():
+    """Verify that HTTP 401 unauthorized error fails immediately with AIProviderConfigError without retrying."""
+    provider = GeminiVisionAIProvider(
+        api_key="invalid_secret_key_12345",
+        fallback_model="gemini-2.0-flash",
+        max_retries=2,
+        retry_base_delay=0.001,
+    )
+
+    mock_401 = ClientError(
+        code=401,
+        response_json={"error": {"code": 401, "message": "API key not valid. Please pass a valid API key.", "status": "UNAUTHENTICATED"}},
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_401)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderConfigError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    assert mock_aio.models.generate_content.call_count == 1
+    assert "invalid or unauthorized" in str(exc_info.value).lower()
+    assert "invalid_secret_key_12345" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_permanent_400_bad_request_fails_immediately():
+    """Verify that HTTP 400 bad request fails immediately with AIProviderError without retrying."""
+    provider = GeminiVisionAIProvider(
+        api_key="valid_key",
+        fallback_model="gemini-2.0-flash",
+        max_retries=2,
+        retry_base_delay=0.001,
+    )
+
+    mock_400 = ClientError(
+        code=400,
+        response_json={"error": {"code": 400, "message": "Invalid argument: image dimensions exceed limit.", "status": "INVALID_ARGUMENT"}},
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_400)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    assert mock_aio.models.generate_content.call_count == 1
+    assert "invalid argument" in str(exc_info.value).lower()
+
+
+def test_gemini_provider_sanitize_message_redacts_keys_and_query_params():
+    """Verify that _sanitize_message redacts the configured API key and query parameters."""
+    secret = "AIzaSySecretApiKey987654321"
+    provider = GeminiVisionAIProvider(api_key=secret)
+
+    raw_msg = f"Request to https://generativelanguage.googleapis.com/v1beta?key={secret}&model=gemini failed with key {secret}"
+    sanitized = provider._sanitize_message(raw_msg)
+
+    assert secret not in sanitized
+    assert sanitized.count("[REDACTED_API_KEY]") == 2
+
+
+@pytest.mark.asyncio
+async def test_analyze_endpoint_returns_503_on_transient_high_demand(monkeypatch):
+    """Verify that POST /api/analyze returns HTTP 503 with user-friendly detail on model high demand."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.core.rate_limit import analysis_rate_limiter
+
+    analysis_rate_limiter.reset()
+
+    mock_503_error = ServerError(
+        code=503,
+        response_json={
+            "error": {
+                "code": 503,
+                "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+                "status": "UNAVAILABLE",
+            }
+        },
+    )
+
+    mock_provider = GeminiVisionAIProvider(
+        api_key="secret_test_key",
+        model_name="gemini-3.8-flash",
+        fallback_model=None,
+        max_retries=0,
+    )
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_503_error)
+    mock_provider._client = MagicMock()
+    mock_provider._client.aio = mock_aio
+
+    monkeypatch.setattr("app.services.analysis_service.get_ai_provider", lambda: mock_provider)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    jpeg_bytes = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00"
+        b"\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f"
+        b"\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\' \",#\x1c\x1c(7),01444\x1f\'9=82<.342\xff\xc0"
+        b"\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01"
+        b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda"
+        b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+    )
+
+    try:
+        response = client.post(
+            "/api/analyze",
+            files={"image": ("food.jpg", jpeg_bytes, "image/jpeg")},
+        )
+
+        assert response.status_code == 503
+        detail = response.json().get("detail", "")
+        assert "experiencing high demand" in detail.lower()
+        assert "try again" in detail.lower()
         assert "secret_test_key" not in detail
     finally:
         analysis_rate_limiter.reset()
