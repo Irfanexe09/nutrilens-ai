@@ -25,6 +25,13 @@ interface ScanFoodProps {
   onExploreDemo: () => void;
 }
 
+export type ScanPipelineStage =
+  | 'idle'
+  | 'validating'
+  | 'uploading'
+  | 'analyzing'
+  | 'results';
+
 export const ScanFood: React.FC<ScanFoodProps> = ({
   onAnalysisComplete,
   onExploreDemo,
@@ -32,9 +39,10 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [pipelineStage, setPipelineStage] = useState<ScanPipelineStage>('idle');
   const [loadingStep, setLoadingStep] = useState<string>('Analyzing your meal...');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [storageStatus, setStorageStatus] = useState<'idle' | 'uploaded' | 'direct' | 'fallback'>('idle');
   const [storageNotice, setStorageNotice] = useState<{
     type: 'info' | 'warning' | 'success';
     message: string;
@@ -52,6 +60,8 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  const isLoading = pipelineStage === 'validating' || pipelineStage === 'uploading' || pipelineStage === 'analyzing';
+
   useEffect(() => {
     return () => {
       // Cleanup object URL on unmount to prevent memory leaks
@@ -67,10 +77,14 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const validateAndSetFile = (file: File) => {
     setErrorMessage(null);
     setAnalysisResult(null);
+    setStorageNotice(null);
+    setStorageStatus('idle');
+    setIsUploaded(false);
 
     // Validate size (10 MB)
     if (file.size > 10 * 1024 * 1024) {
       setErrorMessage('Selected file exceeds the 10MB maximum upload limit.');
+      setPipelineStage('idle');
       return;
     }
 
@@ -78,12 +92,14 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type.toLowerCase())) {
       setErrorMessage('Unsupported format. Please upload a JPEG, PNG, or WEBP image.');
+      setPipelineStage('idle');
       return;
     }
 
     setSelectedFile(file);
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
+    setPipelineStage('idle');
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -114,7 +130,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     if (isSubmittingRef.current || isLoading) return;
 
     isSubmittingRef.current = true;
-    setIsLoading(true);
     setErrorMessage(null);
     setStorageNotice(null);
     setUploadProgress(0);
@@ -123,8 +138,10 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     abortControllerRef.current = controller;
 
     try {
-      // 1. Upload to Firebase Cloud Storage with bounded timeout and progress tracking
+      // 1. Upload to Firebase Cloud Storage (or Direct Mode Fallback)
+      setPipelineStage('uploading');
       setLoadingStep('Uploading food photo to cloud storage...');
+
       try {
         const cloudUrl = await uploadFoodImageToStorage(selectedFile, {
           signal: controller.signal,
@@ -136,6 +153,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
         });
         setPreviewUrl(cloudUrl);
         setIsUploaded(true);
+        setStorageStatus('uploaded');
         setStorageNotice({
           type: 'success',
           message: 'Photo securely stored in Firebase Cloud Storage.',
@@ -149,7 +167,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
 
         // If the user aborted the operation, stop immediately
         if (controller.signal.aborted || storageErr?.code === 'storage/canceled') {
-          setIsLoading(false);
+          setPipelineStage('idle');
           isSubmittingRef.current = false;
           setUploadProgress(null);
           setLoadingStep('');
@@ -159,16 +177,19 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
         // Non-blocking fallback: Inform the user while continuing to AI analysis
         setIsUploaded(false);
         if (storageErr?.code === 'storage/unauthenticated') {
+          setStorageStatus('direct');
           setStorageNotice({
             type: 'info',
-            message: 'Cloud backup skipped (sign in to sync photos across devices). Continuing with direct AI analysis.',
+            message: 'Direct analysis mode: Cloud backup skipped (sign in to sync photos across devices).',
           });
         } else if (storageErr?.code === 'storage/timeout') {
+          setStorageStatus('fallback');
           setStorageNotice({
             type: 'warning',
             message: 'Cloud storage upload timed out after 15s. Continuing with direct AI analysis.',
           });
         } else {
+          setStorageStatus('fallback');
           setStorageNotice({
             type: 'warning',
             message: 'Cloud storage unavailable. Continuing with direct AI analysis.',
@@ -178,26 +199,42 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
 
       // Check if user cancelled while cloud upload was resolving
       if (controller.signal.aborted) {
-        setIsLoading(false);
+        setPipelineStage('idle');
         isSubmittingRef.current = false;
         return;
       }
 
       // 2. Multimodal Vision AI Evaluation
       setUploadProgress(null);
+      setPipelineStage('analyzing');
       setLoadingStep('Multimodal vision evaluating food items and portions...');
+
       const response = await api.analyzeImage(selectedFile, controller.signal);
       setAnalysisResult(response);
+      setPipelineStage('results');
     } catch (err: unknown) {
+      setPipelineStage('idle');
+      // If AI analysis fails, clear any secondary storage notice so user sees only the primary actionable error
+      setStorageNotice(null);
+
       if (controller.signal.aborted) {
-        setErrorMessage('Meal analysis was canceled.');
+        setErrorMessage('Meal analysis was canceled by user.');
       } else if (err instanceof ApiError) {
-        setErrorMessage(err.message);
+        if (err.status === 503) {
+          setErrorMessage(err.message || 'The AI vision service is currently experiencing high demand. Please try again in a few moments.');
+        } else if (err.status === 504) {
+          setErrorMessage('Food analysis timed out. The vision model took too long to respond. Please try again in a few moments.');
+        } else if (err.status === 413) {
+          setErrorMessage('Image size exceeds maximum allowable limit (10MB).');
+        } else if (err.status === 415) {
+          setErrorMessage('Unsupported image format. Allowed formats: JPEG, PNG, WEBP.');
+        } else {
+          setErrorMessage(err.message || 'Food analysis failed. Please try again in a few moments.');
+        }
       } else {
         setErrorMessage('Food analysis timed out or failed. Please try again in a few moments.');
       }
     } finally {
-      setIsLoading(false);
       isSubmittingRef.current = false;
       abortControllerRef.current = null;
       setUploadProgress(null);
@@ -208,10 +245,11 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    setIsLoading(false);
+    setPipelineStage('idle');
     isSubmittingRef.current = false;
     setUploadProgress(null);
     setLoadingStep('');
+    setStorageNotice(null);
     setErrorMessage('Meal analysis was canceled by user.');
   };
 
@@ -226,10 +264,11 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     setPreviewUrl(null);
     setErrorMessage(null);
     setStorageNotice(null);
+    setStorageStatus('idle');
     setUploadProgress(null);
     setIsUploaded(false);
     setAnalysisResult(null);
-    setIsLoading(false);
+    setPipelineStage('idle');
     isSubmittingRef.current = false;
   };
 
@@ -243,7 +282,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const handleLoadSample = async (sampleName: string, category: string) => {
     setErrorMessage(null);
     setAnalysisResult(null);
-    setIsLoading(true);
+    setPipelineStage('validating');
 
     try {
       const canvas = document.createElement('canvas');
@@ -279,11 +318,11 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
             type: 'image/jpeg',
           });
           validateAndSetFile(file);
-          setIsLoading(false);
+          setPipelineStage('idle');
         }
       }, 'image/jpeg');
     } catch {
-      setIsLoading(false);
+      setPipelineStage('idle');
       setErrorMessage('Could not generate sample image.');
     }
   };
@@ -446,13 +485,23 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                       Cloud Stored
                     </span>
                   )}
+                  {storageStatus === 'direct' && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-dark-card text-slate-400 border border-dark-border">
+                      Direct Mode
+                    </span>
+                  )}
+                  {storageStatus === 'fallback' && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-400/10 text-amber-300 border border-amber-400/30">
+                      Local Scan
+                    </span>
+                  )}
                   <span>{(selectedFile.size / 1024).toFixed(1)} KB</span>
                 </div>
               </div>
             )}
 
-            {/* Storage notice (cloud upload info/warning/success) */}
-            {storageNotice && (
+            {/* Storage notice (only shown when not overshadowed by an analysis failure) */}
+            {storageNotice && !errorMessage && (
               <div
                 className={`flex items-start gap-2.5 p-3.5 rounded-xl border text-xs animate-fadeIn ${
                   storageNotice.type === 'success'
@@ -473,8 +522,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                   <span className="font-semibold block">
                     {storageNotice.type === 'success'
                       ? 'Cloud Storage Connected'
-                      : storageNotice.type === 'warning'
-                      ? 'Storage Notice'
                       : 'Storage Notice'}
                   </span>
                   <span className="leading-relaxed">{storageNotice.message}</span>
@@ -482,9 +529,9 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
               </div>
             )}
 
-            {/* Loading Indicator with progress & cancel button */}
+            {/* Loading Indicator with progress, cancel button & 3-stage breadcrumb */}
             {isLoading && (
-              <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 space-y-2.5 animate-fadeIn">
+              <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 space-y-3 animate-fadeIn">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <Loader2 className="w-5 h-5 text-lime-primary animate-spin shrink-0" />
@@ -493,7 +540,9 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                         {loadingStep}
                       </div>
                       <div className="text-[11px] text-lime-primary/90">
-                        Multimodal vision AI is identifying visible dishes and calculating grams...
+                        {pipelineStage === 'validating' && 'Verifying food image resolution and MIME format...'}
+                        {pipelineStage === 'uploading' && 'Saving photo to cloud storage before AI analysis...'}
+                        {pipelineStage === 'analyzing' && 'Multimodal vision AI is identifying visible dishes and calculating grams...'}
                       </div>
                     </div>
                   </div>
@@ -521,6 +570,22 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Distinct Stage Pipeline Stepper */}
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-lime-primary/20 text-[10px] font-mono">
+                  <div className={`flex items-center gap-1.5 ${pipelineStage === 'validating' ? 'text-lime-primary font-bold' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'validating' ? 'bg-lime-primary animate-pulse' : 'bg-slate-500'}`} />
+                    <span>1. Validating</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${pipelineStage === 'uploading' ? 'text-lime-primary font-bold' : isUploaded ? 'text-lime-primary' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'uploading' ? 'bg-lime-primary animate-pulse' : isUploaded ? 'bg-lime-primary' : 'bg-slate-500'}`} />
+                    <span>2. {storageStatus === 'direct' ? 'Direct Mode' : 'Cloud Backup'}</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${pipelineStage === 'analyzing' ? 'text-lime-primary font-bold' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'analyzing' ? 'bg-lime-primary animate-pulse' : 'bg-slate-500'}`} />
+                    <span>3. AI Vision</span>
+                  </div>
+                </div>
               </div>
             )}
 

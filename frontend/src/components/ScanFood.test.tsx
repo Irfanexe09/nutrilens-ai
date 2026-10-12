@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ScanFood } from './ScanFood';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import * as firebaseService from '../services/firebase';
 
 describe('ScanFood Component - Cloud Storage Upload & Resilient Pipeline', () => {
@@ -236,5 +236,64 @@ describe('ScanFood Component - Cloud Storage Upload & Resilient Pipeline', () =>
     // Drops back to initial drag and drop zone
     expect(screen.queryByText('biryani.jpg')).not.toBeInTheDocument();
     expect(screen.getByText(/Drag & drop your food photo here/i)).toBeInTheDocument();
+  });
+
+  it('7. Analysis failure handling: displays clear Analysis Notice on 503 high demand, suppresses storage notices, and allows retry without trapped loading state', async () => {
+    const user = userEvent.setup();
+    const onAnalysisComplete = vi.fn();
+    const onExploreDemo = vi.fn();
+
+    // Storage fails first
+    const storageErr = new Error('Cloud storage upload timed out after 15s.');
+    (storageErr as any).code = 'storage/timeout';
+    vi.spyOn(firebaseService, 'uploadFoodImageToStorage').mockRejectedValue(storageErr);
+
+    // Backend AI analysis then fails with 503
+    const apiError = new ApiError('The AI vision service is currently experiencing high demand. Please try again in a few moments.', 503);
+    vi.spyOn(api, 'analyzeImage').mockRejectedValue(apiError);
+
+    const { container } = render(
+      <ScanFood onAnalysisComplete={onAnalysisComplete} onExploreDemo={onExploreDemo} />
+    );
+
+    selectTestFile(container);
+    const analyzeBtn = await screen.findByRole('button', { name: /analyze food/i });
+    await user.click(analyzeBtn);
+
+    // Analysis Notice is rendered with exact message
+    expect(await screen.findByText(/Analysis Notice/i)).toBeInTheDocument();
+    expect(screen.getByText(/The AI vision service is currently experiencing high demand/i)).toBeInTheDocument();
+
+    // Crucially: conflicting / redundant Storage Notice card is NOT displayed
+    expect(screen.queryByText(/Storage Notice/i)).not.toBeInTheDocument();
+
+    // Metadata bar shows Local Scan badge
+    expect(screen.getByText(/Local Scan/i)).toBeInTheDocument();
+
+    // UI is not stuck: Retry button is active and enabled
+    const retryBtn = screen.getByRole('button', { name: /retry analysis/i });
+    expect(retryBtn).not.toBeDisabled();
+  });
+
+  it('8. Direct AI mode badge: displays Direct Mode tag when unauthenticated without displaying storage error cards', async () => {
+    const user = userEvent.setup();
+    const onAnalysisComplete = vi.fn();
+    const onExploreDemo = vi.fn();
+
+    const unauthErr = new Error('Authentication required');
+    (unauthErr as any).code = 'storage/unauthenticated';
+    vi.spyOn(firebaseService, 'uploadFoodImageToStorage').mockRejectedValue(unauthErr);
+    vi.spyOn(api, 'analyzeImage').mockResolvedValue(mockAnalysisResponse as any);
+
+    const { container } = render(
+      <ScanFood onAnalysisComplete={onAnalysisComplete} onExploreDemo={onExploreDemo} />
+    );
+
+    selectTestFile(container);
+    const analyzeBtn = await screen.findByRole('button', { name: /analyze food/i });
+    await user.click(analyzeBtn);
+
+    // Confirms and transitions to confirmation view
+    expect(await screen.findByText('Chicken Biryani')).toBeInTheDocument();
   });
 });

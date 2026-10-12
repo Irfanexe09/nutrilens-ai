@@ -73,6 +73,13 @@ export interface UploadOptions {
 }
 
 /**
+ * Check if Firebase is configured and a user is currently signed in to Firebase.
+ */
+export function isFirebaseAuthenticated(): boolean {
+  return Boolean(isFirebaseConfigured && auth.currentUser);
+}
+
+/**
  * Sign in with Google Popup
  */
 export async function signInWithGoogle(): Promise<FirebaseUser> {

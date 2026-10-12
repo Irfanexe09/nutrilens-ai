@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   CheckCircle,
+  AlertCircle,
   Trash2,
   BookmarkCheck,
   ChevronRight,
@@ -43,6 +44,9 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   const [selectedMealType, setSelectedMealType] = useState<string>('lunch');
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [isSavingMeal, setIsSavingMeal] = useState(false);
+  const isSavingMealRef = React.useRef(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [savedMealId, setSavedMealId] = useState<string | null>(null);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluateMealResponse | null>(null);
@@ -139,7 +143,11 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   };
 
   const handleSaveMeal = async () => {
-    if (items.length === 0) return;
+    if (items.length === 0 || isSavingMealRef.current || isSavingMeal) return null;
+    isSavingMealRef.current = true;
+    setIsSavingMeal(true);
+    setSaveErrorMessage(null);
+
     try {
       const saved = await api.saveMeal({
         meal_type: selectedMealType,
@@ -154,9 +162,15 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       setSaveSuccessMessage(`Meal recorded successfully as ${selectedMealType}!`);
       setTimeout(() => setSaveSuccessMessage(null), 4000);
       return saved.id;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Save failed:', err);
+      setSaveErrorMessage(
+        err?.message || 'Failed to record meal. Please verify connection and try again.'
+      );
       return null;
+    } finally {
+      setIsSavingMeal(false);
+      isSavingMealRef.current = false;
     }
   };
 
@@ -169,17 +183,25 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     try {
       let currentMealId = savedMealId;
       if (!currentMealId) {
-        const saved = await api.saveMeal({
-          meal_type: selectedMealType,
-          notes: isDemo
-            ? 'Auto-saved for optimization'
-            : `Scanned meal logged as ${selectedMealType}`,
-          image_url: previewImageUrl,
-          items,
-        });
-        currentMealId = saved.id;
-        setSavedMealId(saved.id);
-        setIsSaved(true);
+        if (isSavingMealRef.current) return;
+        isSavingMealRef.current = true;
+        setIsSavingMeal(true);
+        try {
+          const saved = await api.saveMeal({
+            meal_type: selectedMealType,
+            notes: isDemo
+              ? 'Auto-saved for optimization'
+              : `Scanned meal logged as ${selectedMealType}`,
+            image_url: previewImageUrl,
+            items,
+          });
+          currentMealId = saved.id;
+          setSavedMealId(saved.id);
+          setIsSaved(true);
+        } finally {
+          setIsSavingMeal(false);
+          isSavingMealRef.current = false;
+        }
       }
 
       const activeGoal =
@@ -289,21 +311,30 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           </button>
           <button
             onClick={handleSaveMeal}
-            disabled={items.length === 0 || isSaved}
+            disabled={items.length === 0 || isSaved || isSavingMeal}
             className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
               isSaved
                 ? 'bg-dark-inner text-lime-primary border border-lime-primary/30'
                 : 'bg-dark-card text-white border border-dark-border hover:bg-dark-cardHover'
             } disabled:opacity-50`}
           >
-            <BookmarkCheck className="w-4 h-4 text-lime-primary" />
-            <span>{isSaved ? 'Meal Logged' : 'Log Meal'}</span>
+            {isSavingMeal ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-lime-primary" />
+                <span>Saving Meal...</span>
+              </>
+            ) : (
+              <>
+                <BookmarkCheck className="w-4 h-4 text-lime-primary" />
+                <span>{isSaved ? 'Meal Logged' : 'Log Meal'}</span>
+              </>
+            )}
           </button>
 
           {/* Primary Optimizer CTA */}
           <button
             onClick={() => handleTriggerOptimization()}
-            disabled={items.length === 0 || isOptimizing}
+            disabled={items.length === 0 || isOptimizing || isSavingMeal}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-lime-primary hover:bg-lime-hover text-lime-dark text-xs font-extrabold transition-all shadow-lg shadow-lime-primary/10"
           >
             {isOptimizing ? (
@@ -325,6 +356,13 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
         <div className="p-3.5 bg-lime-dim border border-lime-primary/30 text-lime-primary text-xs rounded-xl flex items-center gap-2 animate-fadeIn font-medium">
           <CheckCircle className="w-4 h-4 shrink-0" />
           <span>{saveSuccessMessage}</span>
+        </div>
+      )}
+
+      {saveErrorMessage && (
+        <div className="p-3.5 bg-coral-dim border border-coral-primary/30 text-coral-primary text-xs rounded-xl flex items-center gap-2 animate-fadeIn font-medium">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{saveErrorMessage}</span>
         </div>
       )}
 
