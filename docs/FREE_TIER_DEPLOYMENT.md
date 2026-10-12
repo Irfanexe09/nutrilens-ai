@@ -158,6 +158,32 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
 
 - [x] **Zero Hardcoded Credentials:** Confirmed `.env` is omitted from version control.
 - [x] **No Secrets in Frontend:** Verified that `JWT_SECRET_KEY`, `DATABASE_URL`, and `GEMINI_API_KEY` are strictly backend environment variables and never exposed to `VITE_*` public bundles.
-- [x] **CORS Isolation:** `CORS_ORIGINS` on Render permits only the explicit Vercel frontend URL.
+- [x] **CORS Isolation:** `CORS_ORIGINS` on Render permits only the explicit Vercel frontend URL without trailing slashes.
 - [x] **Loopback & Private Network Safety:** Database connections use enforced TLS encryption (`sslmode=require`).
 - [x] **Permanent Database Retention:** Neon PostgreSQL avoids Render's 30-day database deletion policy.
+- [x] **Ephemeral Database Rejection:** Hardened environments (`staging`/`production`) reject SQLite to prevent silent fallback to ephemeral disk.
+
+---
+
+## 6. Pre-Deployment Verification Status & Operational Truth Matrix
+
+| Scope / Dimension | Status | Verification Details |
+| :--- | :--- | :--- |
+| **Code-Level Backend Tests** | **VERIFIED LOCALLY** | 114 pytest unit & integration tests passing (100% pass rate). |
+| **Frontend Production Build** | **VERIFIED LOCALLY** | `tsc && vite build` passing with 0 errors; SPA client-side rewrite in `vercel.json` verified. |
+| **API URL Normalization** | **VERIFIED LOCALLY** | Validated handling of trailing slashes, absolute origins, and relative paths without `/api/api` duplication. |
+| **CORS Sanitization** | **VERIFIED LOCALLY** | Trailing slash stripping verified via unit tests in `test_config_security.py`. |
+| **Alembic Dynamic Execution** | **VERIFIED LOCALLY** | Tested programmatic runner and Alembic CLI picking up `DATABASE_URL` dynamically without hardcoded config URL. |
+| **Seed Data Idempotency** | **VERIFIED LOCALLY** | Repeated execution confirmed 0 duplicate rows inserted. |
+| **Docker Build / Runtime** | **NOT VERIFIED LOCALLY** | Docker daemon was offline/stopped during Phase 7.8 audit (`/Users/irfan/.docker/run/docker.sock: connect: no such file or directory`). Dockerfile syntax and entrypoint permissions verified statically. |
+| **Live Neon PostgreSQL Instance** | **NOT YET VERIFIED** | No cloud database provisioned during pre-deployment audit (policy constraint). Code-level dialect normalization (`postgresql+psycopg2://`), TLS params (`sslmode=require`), and pooling (`pool_recycle=300`) verified. |
+| **Live Render / Vercel Cloud Runtime** | **NOT YET VERIFIED** | No live cloud accounts or deployments created during pre-deployment audit (policy constraint). |
+
+### Important Operational Reminders
+1. **JWT Secret Generation:** Generate a strong 256-bit cryptographically secure secret locally using:
+   ```bash
+   openssl rand -hex 32
+   ```
+   Do not commit, log, or share this secret. Paste it directly into the Render Environment Variables dashboard.
+2. **Post-Provisioning Configuration:** Once Render and Vercel assign dynamic subdomains (e.g. `https://nutrilens-backend.onrender.com` and `https://nutrilens.vercel.app`), update `CORS_ORIGINS` in Render and `VITE_API_BASE_URL` in Vercel.
+3. **Provider Free-Tier Policy Notice:** Free tier quotas (Vercel 100 GB/mo, Render 750 hrs/mo + 15-min spin-down, Neon 1 GB storage + 100 CU hrs) are subject to provider terms and may change over time. Verify current provider policies before production reliance. Free tier is intended for non-commercial demonstrations, academic testing, or personal portfolio use.
