@@ -100,11 +100,11 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
 ### Step 2: Deploy Backend on Render
 1. Navigate to [Render Dashboard](https://dashboard.render.com/) and click **New > Web Service**.
 2. Connect your GitHub repository: `Irfanexe09/nutrilens-ai`.
-3. Select **Docker** environment:
-   - Root Directory: `backend`
-   - Docker Context: `./backend`
-   - Dockerfile Path: `./backend/Dockerfile`
-   - Instance Type: **Free**
+3. Select **Docker** environment and configure build settings:
+   - **Root Directory**: `backend` (scopes the service to the backend directory)
+   - **Dockerfile Path**: `Dockerfile` (or `./Dockerfile`, relative to `backend`)
+   - **Docker Build Context Directory**: `.` (or leave empty; defaults to Root Directory `backend`)
+   - **Instance Type**: **Free**
 4. Migration Execution & Port Handling:
    - Do **NOT** specify a `preDeployCommand` (not supported on Render Free plans).
    - The container entrypoint `scripts/start.sh` automatically performs DB connectivity checks, applies Alembic migrations, and seeds the core Indian foods dataset before launching Uvicorn.

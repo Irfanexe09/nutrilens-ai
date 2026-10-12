@@ -36,7 +36,7 @@ COPY --from=builder --chown=appuser:appgroup /root/.local /home/appuser/.local
 
 # Ensure PATH and PYTHONPATH include unprivileged user packages
 ENV PATH=/home/appuser/.local/bin:$PATH \
-    PYTHONPATH=/home/appuser/.local/lib/python3.12/site-packages:/app:$PYTHONPATH \
+    PYTHONPATH=/home/appuser/.local/lib/python3.12/site-packages:/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

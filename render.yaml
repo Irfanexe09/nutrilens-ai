@@ -11,8 +11,9 @@ services:
   - type: web
     name: nutrilens-backend
     runtime: docker
-    dockerContext: ./backend
-    dockerfilePath: ./backend/Dockerfile
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
     healthCheckPath: /api/health
     # Note: Render Free plans do not support preDeployCommand.
