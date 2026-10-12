@@ -15,6 +15,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("staging.migrations")
 
 
+def _sanitize_db_error(error_msg: str, engine) -> str:
+    """Mask plain text password from error messages to prevent secret leaks in logs."""
+    if engine.url.password and engine.url.password in error_msg:
+        return error_msg.replace(engine.url.password, "******")
+    return error_msg
+
+
 def wait_for_database(engine, max_retries: int = 15, delay_seconds: float = 2.0) -> bool:
     """Check database availability with retry backoff."""
     logger.info(f"Connecting to database: {engine.url.render_as_string(hide_password=True)}...")
@@ -25,7 +32,8 @@ def wait_for_database(engine, max_retries: int = 15, delay_seconds: float = 2.0)
             logger.info("Database connection established successfully.")
             return True
         except Exception as e:
-            logger.warning(f"Connection attempt {attempt}/{max_retries} failed: {e}")
+            sanitized = _sanitize_db_error(str(e), engine)
+            logger.warning(f"Connection attempt {attempt}/{max_retries} failed: {sanitized}")
             if attempt < max_retries:
                 time.sleep(delay_seconds)
     return False
@@ -63,7 +71,11 @@ def main():
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     alembic_ini = os.path.join(backend_dir, "alembic.ini")
 
-    engine = create_engine(settings.DATABASE_URL)
+    connect_args = {}
+    if settings.DATABASE_URL.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+
+    engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
 
     if not wait_for_database(engine):
         logger.error("Database connection could not be established within retry limit. Aborting.")
@@ -74,7 +86,8 @@ def main():
         seed_nutrition_database(engine)
         logger.info("Staging database initialization and migrations complete.")
     except Exception as e:
-        logger.error(f"Migration routine failed: {e}", exc_info=True)
+        sanitized = _sanitize_db_error(str(e), engine)
+        logger.error(f"Migration routine failed: {sanitized}")
         sys.exit(1)
 
 

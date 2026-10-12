@@ -157,7 +157,17 @@ def test_staging_settings_enforces_hardened_security_guardrails():
         )
     assert "contains default development password" in str(exc_info.value)
 
-    # 3. Staging accepts strong secrets
+    # 3. Staging rejects SQLite to prevent silent fallback to ephemeral disk
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            ENVIRONMENT="staging",
+            JWT_SECRET_KEY="b" * 32,
+            DATABASE_URL="sqlite:///./nutrilens.db",
+            ALLOW_PLACEHOLDER_AI=True,
+        )
+    assert "DATABASE_URL cannot be SQLite" in str(exc_info.value)
+
+    # 4. Staging accepts strong secrets
     valid_staging = Settings(
         ENVIRONMENT="staging",
         JWT_SECRET_KEY="b" * 32,
@@ -184,7 +194,26 @@ def test_database_url_normalization_handles_postgres_and_postgresql_with_query_p
     assert cfg3.DATABASE_URL == "sqlite:///./test.db"
 
 
+def test_database_url_normalization_handles_url_encoded_credentials():
+    """Verify that credentials with URL-encoded characters are preserved during dialect normalization."""
+    url = "postgresql://user_app:p%40ss%23word%21@ep-sample.neon.tech:5432/neondb?sslmode=require"
+    cfg = Settings(DATABASE_URL=url)
+    assert cfg.DATABASE_URL == "postgresql+psycopg2://user_app:p%40ss%23word%21@ep-sample.neon.tech:5432/neondb?sslmode=require"
+
+
 def test_cors_origins_normalization_strips_trailing_slashes():
     """Verify that CORS origins strip trailing slashes to prevent browser CORS preflight mismatches."""
     cfg = Settings(CORS_ORIGINS="https://nutrilens.vercel.app/, https://staging.nutrilens.app///")
     assert cfg.CORS_ORIGINS == ["https://nutrilens.vercel.app", "https://staging.nutrilens.app"]
+
+
+def test_sanitize_db_error_redacts_password():
+    """Verify that _sanitize_db_error masks plain text passwords from connection error messages."""
+    from scripts.run_staging_migrations import _sanitize_db_error
+    from sqlalchemy import create_engine
+
+    engine = create_engine("postgresql+psycopg2://testuser:superSecretPassword123@db.example.com/testdb")
+    raw_error = "OperationalError: password authentication failed for user 'testuser' with password 'superSecretPassword123'"
+    sanitized = _sanitize_db_error(raw_error, engine)
+    assert "superSecretPassword123" not in sanitized
+    assert "******" in sanitized

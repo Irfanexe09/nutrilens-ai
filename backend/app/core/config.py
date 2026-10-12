@@ -101,7 +101,13 @@ class Settings(BaseSettings):
                     f"{env_label.capitalize()} configuration error: JWT_SECRET_KEY must be at least 32 characters long."
                 )
 
-            # 2. Database Password Validation
+            # 2. Database Password & Dialect Validation
+            if self.DATABASE_URL.startswith("sqlite"):
+                raise ValueError(
+                    f"{env_label.capitalize()} configuration error: DATABASE_URL cannot be SQLite in {env_label}. "
+                    "A persistent managed PostgreSQL database (e.g. Neon) is required to prevent data loss."
+                )
+
             if "nutrilens_password" in self.DATABASE_URL:
                 raise ValueError(
                     f"{env_label.capitalize()} configuration error: DATABASE_URL contains default development password "

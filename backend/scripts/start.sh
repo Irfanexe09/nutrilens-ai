@@ -11,6 +11,10 @@
 # ========================================================
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${APP_DIR}"
+
 echo "==> [NutriLens] Checking database connectivity and applying Alembic migrations..."
 python scripts/run_staging_migrations.py
 

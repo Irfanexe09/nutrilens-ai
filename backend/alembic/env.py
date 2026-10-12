@@ -29,8 +29,13 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set database URL dynamically, prioritizing config option over environment
-raw_db_url = config.get_main_option("sqlalchemy.url") or os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+# Set database URL dynamically, prioritizing explicit config option over environment/settings
+raw_opt = config.get_main_option("sqlalchemy.url")
+if raw_opt and not raw_opt.startswith("driver://"):
+    raw_db_url = raw_opt
+else:
+    raw_db_url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+
 if raw_db_url.startswith("postgres://"):
     effective_db_url = raw_db_url.replace("postgres://", "postgresql+psycopg2://", 1)
 elif raw_db_url.startswith("postgresql://"):

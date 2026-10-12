@@ -46,3 +46,18 @@ def test_run_migrations_and_seed_nutrition_on_disposable_database(tmp_path):
     seed_nutrition_database(engine)
 
     engine.dispose()
+
+
+def test_alembic_cli_respects_environment_database_url(tmp_path, monkeypatch):
+    """Verify Alembic dynamically respects DATABASE_URL environment variable without config file hardcoding."""
+    db_file = tmp_path / "env_var_test.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    alembic_ini = os.path.join(backend_dir, "alembic.ini")
+
+    cfg = Config(alembic_ini)
+    command.upgrade(cfg, "head")
+
+    assert os.path.exists(db_file)
