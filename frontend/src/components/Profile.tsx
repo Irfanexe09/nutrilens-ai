@@ -523,16 +523,14 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
 
     try {
       const fbUser = await signInWithGoogle();
-      const userEmail = fbUser.email;
-      if (!userEmail) throw new Error('No email found from Google account.');
 
-      // Sync user with backend
-      let res;
-      try {
-        res = await api.login(userEmail, `fb_${fbUser.uid}`);
-      } catch {
-        res = await api.register(userEmail, `fb_${fbUser.uid}`, fbUser.displayName || 'Google User');
-      }
+      // Obtain the Firebase ID token for server-side verification.
+      // The backend verifies this token cryptographically via Firebase Admin SDK —
+      // identity is never derived from a client-supplied UID or synthetic password.
+      const idToken = await fbUser.getIdToken(true);
+
+      // Authenticate via the secure server-side Firebase endpoint
+      const res = await api.firebaseAuth(idToken);
       setCurrentUser(res.user);
       setShowAuthModal(false);
 

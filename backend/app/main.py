@@ -19,6 +19,7 @@ from app.models import (
 )  # Ensure all models are registered
 from app.services.food_service import FoodService
 from app.api.v1.api import api_router
+from app.core.firebase_admin import initialize_firebase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +54,16 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Database auto-seeding notice: {e}")
     finally:
         db.close()
+
+    # Initialize Firebase Admin SDK for server-side ID token verification
+    try:
+        fb_ready = initialize_firebase()
+        if fb_ready:
+            logger.info("Firebase Admin SDK ready for ID token verification.")
+        else:
+            logger.warning("Firebase Admin SDK not available. Firebase auth endpoints will return 503.")
+    except Exception as e:
+        logger.warning(f"Firebase Admin initialization notice: {e}")
 
     yield
     logger.info("Shutting down NutriLens application...")

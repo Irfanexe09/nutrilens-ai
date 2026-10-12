@@ -47,6 +47,10 @@ class Settings(BaseSettings):
 
     ALLOW_PLACEHOLDER_AI: bool = False
 
+    # Firebase Authentication (server-side ID token verification)
+    FIREBASE_PROJECT_ID: Optional[str] = "nutrilens-dc1f9"
+    FIREBASE_SERVICE_ACCOUNT_JSON: Optional[str] = None  # Base64 or raw JSON from env var
+
     # AI Configuration (Phase 2: Gemini multimodal vision model)
     AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
     GEMINI_API_KEY: Optional[str] = None

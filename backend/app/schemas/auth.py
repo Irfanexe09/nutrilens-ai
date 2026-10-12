@@ -35,3 +35,21 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class FirebaseAuthRequest(BaseModel):
+    """Request body for Firebase ID token authentication."""
+    id_token: str = Field(
+        ...,
+        min_length=1,
+        description="Firebase ID token obtained from Firebase client SDK",
+    )
+
+
+class FirebaseLinkRequest(BaseModel):
+    """Request body for linking a Firebase identity to an existing backend account."""
+    id_token: str = Field(
+        ...,
+        min_length=1,
+        description="Firebase ID token to link to the current authenticated account",
+    )

@@ -105,6 +105,29 @@ export const api = {
     return handleResponse<User>(res);
   },
 
+  async firebaseAuth(idToken: string): Promise<{ access_token: string; user: User }> {
+    const res = await fetch(`${API_BASE}/auth/firebase`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    const data = await handleResponse<{ access_token: string; user: User }>(res);
+    this.setToken(data.access_token);
+    return data;
+  },
+
+  async linkFirebase(idToken: string): Promise<User> {
+    const res = await fetch(`${API_BASE}/auth/link-firebase`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader(),
+      },
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    return handleResponse<User>(res);
+  },
+
   // Profile & Targets
   async getProfile(): Promise<ProfileWithTarget> {
     const res = await fetch(`${API_BASE}/profile`, {
