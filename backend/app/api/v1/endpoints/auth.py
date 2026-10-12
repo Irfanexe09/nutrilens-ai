@@ -224,9 +224,10 @@ def link_firebase_account(
     try:
         decoded_token = verify_firebase_id_token(req.id_token)
     except ValueError as e:
+        logger.warning(f"[Auth Endpoint] Link token verification rejected: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Firebase token verification failed: {e}",
+            detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
 

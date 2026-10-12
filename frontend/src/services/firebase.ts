@@ -28,14 +28,16 @@ export const isFirebaseConfigured = Boolean(
   !rawApiKey.includes('your_')
 );
 
+const cleanEnv = (val?: string) => (val || '').trim().replace(/^["']|["']$/g, '');
+
 const firebaseConfig = {
-  apiKey: rawApiKey || 'unconfigured_placeholder_key',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'nutrilens-dc1f9.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'nutrilens-dc1f9',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'nutrilens-dc1f9.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '28214591441',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:28214591441:web:9162450f2b28d5ca162af0',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-TGCVBTNMQK',
+  apiKey: cleanEnv(import.meta.env.VITE_FIREBASE_API_KEY) || 'unconfigured_placeholder_key',
+  authDomain: cleanEnv(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN) || 'nutrilens-dc1f9.firebaseapp.com',
+  projectId: cleanEnv(import.meta.env.VITE_FIREBASE_PROJECT_ID) || 'nutrilens-dc1f9',
+  storageBucket: cleanEnv(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET) || 'nutrilens-dc1f9.firebasestorage.app',
+  messagingSenderId: cleanEnv(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID) || '28214591441',
+  appId: cleanEnv(import.meta.env.VITE_FIREBASE_APP_ID) || '1:28214591441:web:9162450f2b28d5ca162af0',
+  measurementId: cleanEnv(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) || 'G-TGCVBTNMQK',
 };
 
 // Initialize Firebase singleton

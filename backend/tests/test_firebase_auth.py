@@ -395,3 +395,94 @@ def test_link_firebase_returns_503_when_not_configured(mock_available):
         headers={"Authorization": f"Bearer {reg_data['access_token']}"},
     )
     assert res.status_code == 503
+
+
+# ─── Regression Tests for Confirmed Root Cause ─────────────────────────────
+
+def test_public_key_only_initialization_succeeds_without_service_account():
+    """Verify that initialize_firebase() succeeds in public-key mode without raising DefaultCredentialsError."""
+    from app.core import firebase_admin as fa
+    fa.reset_for_testing()
+    ready = fa.initialize_firebase()
+    assert ready is True
+    assert fa.is_firebase_available() is True
+    fa.reset_for_testing()
+
+
+def test_verify_firebase_id_token_real_sdk_handles_malformed_token_without_credentials_error():
+    """Verify that verify_firebase_id_token on an invalid token does NOT fail with DefaultCredentialsError."""
+    from app.core import firebase_admin as fa
+    fa.reset_for_testing()
+    fa.initialize_firebase()
+
+    with pytest.raises(ValueError) as exc_info:
+        fa.verify_firebase_id_token("invalid_malformed_jwt_token_sample_string_12345")
+
+    error_msg = str(exc_info.value)
+    # Must report an invalid token category, NEVER DefaultCredentialsError or generic unhandled failure
+    assert "Invalid Firebase ID token" in error_msg
+    assert "DefaultCredentialsError" not in error_msg
+    fa.reset_for_testing()
+
+
+def test_verify_firebase_id_token_detects_wrong_audience_with_clear_category_message():
+    """Verify that a token with wrong audience is rejected with an informative audience mismatch message."""
+    import jwt
+    from datetime import datetime, timezone, timedelta
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from app.core import firebase_admin as fa
+
+    fa.reset_for_testing()
+    fa.initialize_firebase()
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.now(timezone.utc)
+    payload = {
+        "iss": "https://securetoken.google.com/nutrilens-dc1f9",
+        "aud": "wrong-project-audience",
+        "sub": "user_12345",
+        "uid": "user_12345",
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "iat": int(now.timestamp()),
+        "email": "audience_test@example.com",
+    }
+    wrong_aud_token = jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "some-test-kid"})
+
+    with pytest.raises(ValueError) as exc_info:
+        fa.verify_firebase_id_token(wrong_aud_token)
+
+    error_msg = str(exc_info.value)
+    assert "audience" in error_msg.lower() or "aud" in error_msg.lower()
+    fa.reset_for_testing()
+
+
+def test_diagnostic_logging_records_category_without_leaking_token_bytes(caplog):
+    """Verify that diagnostic logging captures failure category without leaking token strings."""
+    import logging
+    from app.core import firebase_admin as fa
+
+    fa.reset_for_testing()
+    fa.initialize_firebase()
+
+    sensitive_token_content = "super_sensitive_token_payload_must_not_leak_98765"
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError):
+            fa.verify_firebase_id_token(sensitive_token_content)
+
+    # Confirm diagnostic category is logged
+    assert any("[Category: INVALID_TOKEN]" in record.message or "Token is empty or malformed" in record.message for record in caplog.records)
+    # Confirm the raw token string is NEVER leaked in logs
+    for record in caplog.records:
+        assert sensitive_token_content not in record.message
+    fa.reset_for_testing()
+
+
+def test_firebase_project_id_validator_normalizes_quotes_and_whitespace():
+    """Verify that Settings.assemble_firebase_project_id strips quotes and whitespace."""
+    from app.core.config import Settings
+    s = Settings(FIREBASE_PROJECT_ID='  "nutrilens-dc1f9"  ')
+    assert s.FIREBASE_PROJECT_ID == "nutrilens-dc1f9"
+
+    s2 = Settings(FIREBASE_PROJECT_ID="'nutrilens-dc1f9'")
+    assert s2.FIREBASE_PROJECT_ID == "nutrilens-dc1f9"
+

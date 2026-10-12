@@ -157,6 +157,18 @@ class Settings(BaseSettings):
             return None
         return cleaned or None
 
+    @field_validator("FIREBASE_PROJECT_ID", mode="before")
+    @classmethod
+    def assemble_firebase_project_id(cls, v: Optional[str]) -> str:
+        """
+        Normalize the Firebase project ID.
+        Strips surrounding whitespace, single/double quotes.
+        """
+        if not v or not isinstance(v, str) or not v.strip():
+            return "nutrilens-dc1f9"
+        cleaned = v.strip().strip("\"'")
+        return cleaned or "nutrilens-dc1f9"
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_database_url(cls, v: str) -> str:
