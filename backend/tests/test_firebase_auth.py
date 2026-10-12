@@ -159,7 +159,12 @@ def test_firebase_auth_does_not_auto_link_password_account(mock_verify, mock_ava
 
     res = client.post("/api/auth/firebase", json={"id_token": "valid_token_for_colliding_email"})
     assert res.status_code == 409
-    assert "already exists" in res.json()["detail"].lower()
+    detail = res.json()["detail"]
+    detail_msg = detail if isinstance(detail, str) else detail.get("message", "")
+    assert "already exists" in detail_msg.lower()
+    if isinstance(detail, dict):
+        assert detail.get("error_code") == "ACCOUNT_LINKING_REQUIRED"
+        assert detail.get("email") == unique_email
 
 
 # ─── Forged UID Prevention ──────────────────────────────────────────────────

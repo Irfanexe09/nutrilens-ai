@@ -51,9 +51,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(
     subject: Union[str, Any],
     expires_delta: Optional[timedelta] = None,
+    token_version: Optional[int] = None,
 ) -> str:
     """
-    Generate a signed JWT token with standard subject and expiration claims.
+    Generate a signed JWT token with standard subject, expiration, and session version claims.
     """
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -65,6 +66,8 @@ def create_access_token(
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
+    if token_version is not None:
+        to_encode["v"] = int(token_version)
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -85,7 +88,7 @@ def get_current_user_optional(
     """
     Optional authentication dependency.
     Returns User if valid Bearer token provided; None if omitted.
-    Raises 401 if invalid/expired token is provided.
+    Raises 401 if invalid/expired token is provided, or if session version is invalidated.
     """
     if not auth or not auth.credentials:
         return None
@@ -107,6 +110,17 @@ def get_current_user_optional(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Session revocation check: verify token_version claim against database value
+    token_version = payload.get("v")
+    user_version = getattr(user, "token_version", 1) or 1
+    if token_version is not None and token_version != user_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has expired due to a recent password change. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return user
 
 

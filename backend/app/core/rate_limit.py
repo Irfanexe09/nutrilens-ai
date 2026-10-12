@@ -12,9 +12,15 @@ class InMemorySlidingWindowRateLimiter:
     Protects multi-modal AI vision requests from denial of service and quota exhaustion.
     """
 
-    def __init__(self, max_requests: int = 15, window_seconds: int = 60):
+    def __init__(
+        self,
+        max_requests: int = 15,
+        window_seconds: int = 60,
+        detail_message: Optional[str] = None,
+    ):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
+        self.detail_message = detail_message
         self._records: Dict[str, List[float]] = {}
         self._lock = threading.Lock()
 
@@ -33,9 +39,10 @@ class InMemorySlidingWindowRateLimiter:
             if len(timestamps) >= self.max_requests:
                 oldest = timestamps[0]
                 retry_after = max(1, math.ceil(oldest + self.window_seconds - now))
+                msg = self.detail_message or f"Rate limit exceeded ({self.max_requests} req/{self.window_seconds}s). Please wait before trying again."
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Rate limit exceeded for food image analysis ({self.max_requests} req/{self.window_seconds}s). Please wait before submitting another image.",
+                    detail=msg,
                     headers={"Retry-After": str(retry_after)},
                 )
 
@@ -52,6 +59,14 @@ class InMemorySlidingWindowRateLimiter:
 analysis_rate_limiter = InMemorySlidingWindowRateLimiter(
     max_requests=settings.RATE_LIMIT_ANALYZE_PER_MINUTE,
     window_seconds=60,
+    detail_message="Rate limit exceeded for food image analysis. Please wait before submitting another image.",
+)
+
+# Rate limiter for password reset requests (5 requests per 5 minutes per IP/email)
+password_reset_rate_limiter = InMemorySlidingWindowRateLimiter(
+    max_requests=5,
+    window_seconds=300,
+    detail_message="Too many password reset requests. Please wait a few minutes before trying again.",
 )
 
 

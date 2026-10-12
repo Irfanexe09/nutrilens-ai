@@ -14,6 +14,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     name = Column(String(100), nullable=True)
     firebase_uid = Column(String(128), unique=True, nullable=True, index=True)
+    password_reset_token_hash = Column(String(64), nullable=True, index=True)
+    password_reset_expires_at = Column(DateTime, nullable=True)
+    token_version = Column(Integer, default=1, server_default="1", nullable=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(

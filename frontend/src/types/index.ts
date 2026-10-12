@@ -190,6 +190,7 @@ export interface User {
   id: string;
   email: string;
   name?: string;
+  firebase_uid?: string | null;
   created_at?: string;
 }
 

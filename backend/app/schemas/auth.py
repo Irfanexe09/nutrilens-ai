@@ -53,3 +53,32 @@ class FirebaseLinkRequest(BaseModel):
         min_length=1,
         description="Firebase ID token to link to the current authenticated account",
     )
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request body to initiate password reset email."""
+    email: str = Field(
+        ...,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        description="Registered account email address",
+    )
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request body to execute a password reset using single-use token."""
+    token: str = Field(
+        ...,
+        min_length=16,
+        description="Single-use password reset token received via email",
+    )
+    new_password: str = Field(
+        ...,
+        min_length=6,
+        description="New password (minimum 6 characters)",
+    )
+
+
+class MessageResponse(BaseModel):
+    """Generic message response."""
+    message: str
+

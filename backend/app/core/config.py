@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: Optional[str] = "nutrilens-dc1f9"
     FIREBASE_SERVICE_ACCOUNT_JSON: Optional[str] = None  # Base64 or raw JSON from env var
 
+    # Email / SMTP Settings for Password Recovery
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_TLS: bool = True
+    SMTP_SSL: bool = False
+    EMAILS_FROM_EMAIL: str = "noreply@nutrilens.ai"
+    FRONTEND_URL: str = "https://nutrilens-ai-silk.vercel.app"
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
     # AI Configuration (Phase 2: Gemini multimodal vision model)
     AI_PROVIDER: str = "gemini"  # "gemini" or "placeholder"
     GEMINI_API_KEY: Optional[str] = None
@@ -168,6 +179,18 @@ class Settings(BaseSettings):
             return "nutrilens-dc1f9"
         cleaned = v.strip().strip("\"'")
         return cleaned or "nutrilens-dc1f9"
+
+    @field_validator("FRONTEND_URL", mode="before")
+    @classmethod
+    def assemble_frontend_url(cls, v: Optional[str]) -> str:
+        """
+        Normalize the frontend URL.
+        Strips surrounding whitespace, quotes, and trailing slash.
+        """
+        if not v or not isinstance(v, str) or not v.strip():
+            return "https://nutrilens-ai-silk.vercel.app"
+        cleaned = v.strip().strip("\"'").rstrip("/")
+        return cleaned or "https://nutrilens-ai-silk.vercel.app"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

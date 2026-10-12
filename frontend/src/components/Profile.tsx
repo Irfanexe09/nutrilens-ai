@@ -10,8 +10,13 @@ import {
   Sparkles,
   Flame,
   X,
+  KeyRound,
+  Link2,
+  ArrowLeft,
+  Mail,
+  Lock,
 } from 'lucide-react';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import {
   UserProfile,
   DailyNutritionTarget,
@@ -66,14 +71,46 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
 
   // Auth Modal State
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<
+    'login' | 'register' | 'forgot-password' | 'reset-password' | 'link-account'
+  >('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // Password Recovery & Linking State (in-memory only)
+  const [pendingFirebaseIdToken, setPendingFirebaseIdToken] = useState<string | null>(null);
+  const [linkingEmail, setLinkingEmail] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+
   useEffect(() => {
     loadUserData();
+
+    // Check URL parameters for password reset token
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('reset_token');
+      if (token) {
+        setResetToken(token);
+        setAuthMode('reset-password');
+        setShowAuthModal(true);
+        // Clean query parameter from browser address bar without reloading
+        const url = new URL(window.location.href);
+        url.searchParams.delete('reset_token');
+        const cleanPath = url.pathname + (url.search ? url.search : '');
+        window.history.replaceState({}, document.title, cleanPath);
+      }
+    } catch {
+      // In case window or URL is not available in mock environments
+    }
   }, []);
 
   const loadUserData = async () => {
@@ -529,9 +566,76 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
       // identity is never derived from a client-supplied UID or synthetic password.
       const idToken = await fbUser.getIdToken(true);
 
-      // Authenticate via the secure server-side Firebase endpoint
-      const res = await api.firebaseAuth(idToken);
-      setCurrentUser(res.user);
+      try {
+        // Authenticate via the secure server-side Firebase endpoint
+        const res = await api.firebaseAuth(idToken);
+        setCurrentUser(res.user);
+        setShowAuthModal(false);
+
+        if (hasValidMetrics) {
+          const profRes = await api.updateProfile(payload);
+          setProfile(profRes.profile);
+          setTargets(profRes.targets);
+          setSaveSuccess(true);
+          isDirtyRef.current = false;
+          if (onProfileUpdated) onProfileUpdated();
+        }
+      } catch (err: any) {
+        if (
+          err instanceof ApiError &&
+          err.status === 409 &&
+          err.data?.detail?.error_code === 'ACCOUNT_LINKING_REQUIRED'
+        ) {
+          // Account linking required: existing password account exists with this email.
+          // Store token strictly in memory for the linking step.
+          setPendingFirebaseIdToken(idToken);
+          setLinkingEmail(err.data.detail.email || fbUser.email || '');
+          setLinkPassword('');
+          setAuthMode('link-account');
+          setAuthError(null);
+          return;
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyAndLinkGoogle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingFirebaseIdToken) {
+      setAuthError('Google sign-in session expired. Please sign in with Google again.');
+      setAuthMode('login');
+      return;
+    }
+    setAuthError(null);
+    setLoading(true);
+
+    const errors = validateNumericValues(ageStr, heightStr, weightStr);
+    const hasValidMetrics = Object.keys(errors).length === 0;
+
+    const payload: UserProfile = {
+      ...profile,
+      age: parseInt(ageStr, 10),
+      height_cm: parseFloat(heightStr),
+      weight_kg: parseFloat(weightStr),
+      sex,
+      activity_level: activityLevel,
+      goal,
+    };
+
+    try {
+      // 1. Authenticate with local email & password to establish JWT
+      await api.login(linkingEmail, linkPassword);
+      // 2. Securely link the verified Firebase ID token to the authenticated account
+      const linkedUser = await api.linkFirebase(pendingFirebaseIdToken);
+      setCurrentUser(linkedUser);
+      // Clear sensitive temporary values from memory
+      setPendingFirebaseIdToken(null);
+      setLinkPassword('');
       setShowAuthModal(false);
 
       if (hasValidMetrics) {
@@ -543,10 +647,80 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
         if (onProfileUpdated) onProfileUpdated();
       }
     } catch (err: any) {
-      setAuthError(err.message || 'Google sign-in failed');
+      setAuthError(err.message || 'Failed to verify password and link account.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLinkCurrentAccountWithGoogle = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const fbUser = await signInWithGoogle();
+      const idToken = await fbUser.getIdToken(true);
+      const linkedUser = await api.linkFirebase(idToken);
+      setCurrentUser(linkedUser);
+      setSaveSuccess(true);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to link Google account.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setLoading(true);
+    try {
+      const res = await api.forgotPassword(email);
+      setForgotSubmitted(true);
+      setForgotMessage(res.message);
+    } catch (err: any) {
+      setAuthError(err.message || 'Failed to send password reset email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    if (newPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setAuthError('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.resetPassword(resetToken, newPassword);
+      setResetSuccess(true);
+      setResetMessage(res.message);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setAuthError(err.message || 'Failed to reset password. The link may have expired or is invalid.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCloseAuthModal = () => {
+    setShowAuthModal(false);
+    setAuthMode('login');
+    setPendingFirebaseIdToken(null);
+    setLinkPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setForgotSubmitted(false);
+    setResetSuccess(false);
+    setAuthError(null);
   };
 
   const handleSignOut = async () => {
@@ -612,14 +786,33 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-dark-border gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
               Personalization Engine
             </span>
             {currentUser && (
-              <span className="text-[11px] bg-dark-card text-slate-300 px-2.5 py-0.5 rounded-full border border-dark-border">
-                {currentUser.email}
-              </span>
+              <>
+                <span className="text-[11px] bg-dark-card text-slate-300 px-2.5 py-0.5 rounded-full border border-dark-border font-mono">
+                  {currentUser.email}
+                </span>
+                {currentUser.firebase_uid ? (
+                  <span className="text-[11px] bg-dark-card text-lime-primary px-2.5 py-0.5 rounded-full border border-lime-primary/30 flex items-center gap-1 font-medium">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Google Linked
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleLinkCurrentAccountWithGoogle}
+                    disabled={loading}
+                    className="text-[11px] bg-dark-card hover:bg-dark-cardHover text-slate-300 hover:text-white px-2.5 py-0.5 rounded-full border border-dark-border flex items-center gap-1 transition-colors"
+                    title="Link Google account for one-click login"
+                  >
+                    <Link2 className="w-3 h-3 text-lime-primary" />
+                    Link Google
+                  </button>
+                )}
+              </>
             )}
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
@@ -630,10 +823,14 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
           </p>
         </div>
 
-        <div>
+        <div className="flex items-center gap-3">
           {!currentUser ? (
             <button
-              onClick={() => setShowAuthModal(true)}
+              onClick={() => {
+                setAuthMode('login');
+                setAuthError(null);
+                setShowAuthModal(true);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-lime-primary hover:bg-lime-hover text-lime-dark rounded-xl text-xs sm:text-sm font-bold transition shadow-lg shadow-lime-primary/10"
             >
               <LogIn className="w-4 h-4" />
@@ -1014,157 +1211,469 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-dark-card rounded-2xl border border-dark-border max-w-md w-full p-6 shadow-2xl relative space-y-5">
             <button
-              onClick={() => setShowAuthModal(false)}
+              onClick={handleCloseAuthModal}
               className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+              aria-label="Close modal"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-2">
-                <LogIn className="w-3.5 h-3.5" />
-                Authentication
-              </div>
-              <h3 className="text-xl font-bold text-white">
-                {authMode === 'login' ? 'Welcome Back' : 'Create an Account'}
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Save your personal profile and sync nutrition targets to the cloud.
-              </p>
-            </div>
-
-            {/* Mode Switch Tabs */}
-            <div className="grid grid-cols-2 bg-dark-inner p-1 rounded-xl border border-dark-border text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setAuthMode('login')}
-                className={`py-2 rounded-lg transition-colors ${
-                  authMode === 'login' ? 'bg-dark-card text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthMode('register')}
-                className={`py-2 rounded-lg transition-colors ${
-                  authMode === 'register' ? 'bg-dark-card text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Register
-              </button>
-            </div>
-
-            {/* Google Sign In via Firebase */}
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              className="w-full py-2.5 bg-dark-inner hover:bg-dark-cardHover border border-dark-border text-white font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2.5 shadow-sm"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Continue with Google</span>
-            </button>
-
-            <div className="relative text-center my-1">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-dark-border" />
-              </div>
-              <span className="relative px-3 bg-dark-card text-[10px] text-slate-500 uppercase tracking-wider font-mono">
-                or email & password
-              </span>
-            </div>
-
-            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
-              {authMode === 'register' && (
+            {/* Standard Login & Register Modes */}
+            {(authMode === 'login' || authMode === 'register') && (
+              <>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Your name"
-                    className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
-                  />
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-2">
+                    <LogIn className="w-3.5 h-3.5" />
+                    Authentication
+                  </div>
+                  <h3 className="text-xl font-bold text-white">
+                    {authMode === 'login' ? 'Welcome Back' : 'Create an Account'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Save your personal profile and sync nutrition targets to the cloud.
+                  </p>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  required
-                  className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
-                />
-              </div>
-
-              {authError && (
-                <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl text-xs text-coral-primary flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{authError}</span>
+                {/* Mode Switch Tabs */}
+                <div className="grid grid-cols-2 bg-dark-inner p-1 rounded-xl border border-dark-border text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthError(null);
+                    }}
+                    className={`py-2 rounded-lg transition-colors ${
+                      authMode === 'login' ? 'bg-dark-card text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('register');
+                      setAuthError(null);
+                    }}
+                    className={`py-2 rounded-lg transition-colors ${
+                      authMode === 'register' ? 'bg-dark-card text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Register
+                  </button>
                 </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                <span>{authMode === 'login' ? 'Sign In & Save' : 'Create Account & Save'}</span>
-              </button>
-            </form>
+                {/* Google Sign In via Firebase */}
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-dark-inner hover:bg-dark-cardHover border border-dark-border text-white font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2.5 shadow-sm"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Continue with Google</span>
+                </button>
 
-            <div className="relative text-center my-2">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-dark-border" />
+                <div className="relative text-center my-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-dark-border" />
+                  </div>
+                  <span className="relative px-3 bg-dark-card text-[10px] text-slate-500 uppercase tracking-wider font-mono">
+                    or email & password
+                  </span>
+                </div>
+
+                <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+                  {authMode === 'register' && (
+                    <div>
+                      <label htmlFor="auth-name" className="block text-xs font-medium text-slate-300 mb-1">Name</label>
+                      <input
+                        id="auth-name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Your name"
+                        className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label htmlFor="auth-email" className="block text-xs font-medium text-slate-300 mb-1">Email</label>
+                    <input
+                      id="auth-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      required
+                      className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="auth-password" className="block text-xs font-medium text-slate-300">Password</label>
+                      {authMode === 'login' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthMode('forgot-password');
+                            setAuthError(null);
+                            setForgotSubmitted(false);
+                            setForgotMessage(null);
+                          }}
+                          className="text-[11px] text-lime-primary hover:text-lime-hover font-medium transition-colors hover:underline"
+                        >
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      id="auth-password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                    />
+                  </div>
+
+                  {authError && (
+                    <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl text-xs text-coral-primary flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    <span>{authMode === 'login' ? 'Sign In & Save' : 'Create Account & Save'}</span>
+                  </button>
+                </form>
+
+                <div className="relative text-center my-2">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-dark-border" />
+                  </div>
+                  <span className="relative px-3 bg-dark-card text-[11px] text-slate-500 uppercase tracking-wider">
+                    Or
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCreateDemoUser}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-dark-inner hover:bg-dark-cardHover border border-dark-border text-slate-200 font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-lime-primary" />
+                  <span>Continue with Instant Demo User</span>
+                </button>
+              </>
+            )}
+
+            {/* Forgot Password Mode */}
+            {authMode === 'forgot-password' && (
+              <div className="space-y-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-2">
+                    <KeyRound className="w-3.5 h-3.5" />
+                    Account Recovery
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Reset Your Password</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Enter your registered email address and we'll send a secure password recovery link.
+                  </p>
+                </div>
+
+                {forgotSubmitted ? (
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="p-4 bg-lime-dim border border-lime-primary/30 rounded-xl flex items-start gap-3 text-xs text-lime-primary">
+                      <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block mb-1">Check Your Inbox</span>
+                        <p className="leading-relaxed text-slate-200">
+                          {forgotMessage ||
+                            'If an account exists with this email, a password reset link has been sent. Please check your inbox.'}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Password reset links are valid for 30 minutes. If you do not see the email shortly, please check your spam or junk folder.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setForgotSubmitted(false);
+                        setForgotMessage(null);
+                        setAuthError(null);
+                      }}
+                      className="w-full py-2.5 bg-dark-inner hover:bg-dark-cardHover border border-dark-border text-white font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-lime-primary" />
+                      <span>Return to Sign In</span>
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPasswordSubmit} className="space-y-3.5">
+                    <div>
+                      <label htmlFor="forgot-email" className="block text-xs font-medium text-slate-300 mb-1">Account Email</label>
+                      <input
+                        id="forgot-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="name@example.com"
+                        required
+                        className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                      />
+                    </div>
+
+                    {authError && (
+                      <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl text-xs text-coral-primary flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span>{authError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                      <span>Send Recovery Link</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError(null);
+                      }}
+                      className="w-full py-2 text-xs text-slate-400 hover:text-white font-medium transition flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Sign In</span>
+                    </button>
+                  </form>
+                )}
               </div>
-              <span className="relative px-3 bg-dark-card text-[11px] text-slate-500 uppercase tracking-wider">
-                Or
-              </span>
-            </div>
+            )}
 
-            <button
-              type="button"
-              onClick={handleCreateDemoUser}
-              disabled={loading}
-              className="w-full py-2.5 bg-dark-inner hover:bg-dark-cardHover border border-dark-border text-slate-200 font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-lime-primary" />
-              <span>Continue with Instant Demo User</span>
-            </button>
+            {/* Reset Password Mode (via email link) */}
+            {authMode === 'reset-password' && (
+              <div className="space-y-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-2">
+                    <Lock className="w-3.5 h-3.5" />
+                    Security
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Create New Password</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Enter a new password for your account. All older sessions will be signed out.
+                  </p>
+                </div>
+
+                {resetSuccess ? (
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="p-4 bg-lime-dim border border-lime-primary/30 rounded-xl flex items-start gap-3 text-xs text-lime-primary">
+                      <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block mb-1">Password Reset Complete</span>
+                        <p className="leading-relaxed text-slate-200">
+                          {resetMessage || 'Your password has been updated successfully. Older sessions have been revoked.'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setResetSuccess(false);
+                        setResetMessage(null);
+                        setPassword('');
+                        setAuthError(null);
+                      }}
+                      className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      <span>Sign In with New Password</span>
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleResetPasswordSubmit} className="space-y-3.5">
+                    <div>
+                      <label htmlFor="reset-new-password" className="block text-xs font-medium text-slate-300 mb-1">New Password</label>
+                      <input
+                        id="reset-new-password"
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        required
+                        minLength={6}
+                        className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="reset-confirm-password" className="block text-xs font-medium text-slate-300 mb-1">Confirm New Password</label>
+                      <input
+                        id="reset-confirm-password"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Confirm new password"
+                        required
+                        minLength={6}
+                        className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                      />
+                    </div>
+
+                    {authError && (
+                      <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl text-xs text-coral-primary flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span>{authError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                      <span>Update Password & Continue</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError(null);
+                      }}
+                      className="w-full py-2 text-xs text-slate-400 hover:text-white font-medium transition flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Cancel</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* Account Linking Mode (Google linking with existing password account) */}
+            {authMode === 'link-account' && (
+              <div className="space-y-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-2">
+                    <Link2 className="w-3.5 h-3.5" />
+                    Account Verification
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Link Google Account</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    An existing NutriLens account is registered with this email address.
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-dark-inner border border-dark-border rounded-xl space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Registered Account:</span>
+                    <span className="font-mono text-lime-primary font-semibold">{linkingEmail}</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed pt-1 border-t border-dark-border">
+                    To connect your Google account securely without losing any meals, profile data, or targets, please verify your NutriLens account password.
+                  </p>
+                </div>
+
+                <form onSubmit={handleVerifyAndLinkGoogle} className="space-y-3.5">
+                  <div>
+                    <label htmlFor="link-password" className="block text-xs font-medium text-slate-300 mb-1">
+                      NutriLens Password
+                    </label>
+                    <input
+                      id="link-password"
+                      type="password"
+                      value={linkPassword}
+                      onChange={(e) => setLinkPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      autoFocus
+                      className="w-full px-3 py-2 bg-dark-inner border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-lime-primary focus:ring-1 focus:ring-lime-primary"
+                    />
+                  </div>
+
+                  {authError && (
+                    <div className="p-3 bg-coral-dim border border-coral-primary/30 rounded-xl text-xs text-coral-primary flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark font-bold rounded-xl text-sm transition-all shadow-lg shadow-lime-primary/10 flex items-center justify-center gap-2"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                    <span>Verify Password & Link Google</span>
+                  </button>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmail(linkingEmail);
+                        setAuthMode('forgot-password');
+                        setPendingFirebaseIdToken(null);
+                        setLinkPassword('');
+                        setAuthError(null);
+                      }}
+                      className="text-xs text-lime-primary hover:text-lime-hover font-medium transition-colors hover:underline"
+                    >
+                      Forgot your password?
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingFirebaseIdToken(null);
+                        setLinkPassword('');
+                        setAuthMode('login');
+                        setAuthError(null);
+                      }}
+                      className="text-xs text-slate-400 hover:text-white font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       )}

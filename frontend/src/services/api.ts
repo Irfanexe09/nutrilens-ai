@@ -37,9 +37,11 @@ const TOKEN_KEY = 'nutrilens_auth_token';
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  data?: any;
+  constructor(message: string, status: number, data?: any) {
     super(message);
     this.status = status;
+    this.data = data;
     this.name = 'ApiError';
   }
 }
@@ -52,13 +54,20 @@ function getAuthHeader(): Record<string, string> {
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let errorDetail = 'API request failed';
+    let responseData: any = null;
     try {
-      const data = await res.json();
-      errorDetail = data.detail || errorDetail;
+      responseData = await res.json();
+      if (typeof responseData.detail === 'string') {
+        errorDetail = responseData.detail;
+      } else if (responseData.detail && typeof responseData.detail === 'object') {
+        errorDetail = responseData.detail.message || JSON.stringify(responseData.detail);
+      } else if (responseData.message) {
+        errorDetail = responseData.message;
+      }
     } catch {
       // ignore json parse error
     }
-    throw new ApiError(errorDetail, res.status);
+    throw new ApiError(errorDetail, res.status, responseData);
   }
   return res.json();
 }
@@ -126,6 +135,24 @@ export const api = {
       body: JSON.stringify({ id_token: idToken }),
     });
     return handleResponse<User>(res);
+  },
+
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    return handleResponse<{ message: string }>(res);
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+    return handleResponse<{ message: string }>(res);
   },
 
   // Profile & Targets
