@@ -175,7 +175,7 @@ Render's free tier uses an ephemeral container filesystem (`/app/uploads` is wip
 | **CORS Sanitization** | **VERIFIED LOCALLY** | Trailing slash stripping verified via unit tests in `test_config_security.py`. |
 | **Alembic Dynamic Execution** | **VERIFIED LOCALLY** | Tested programmatic runner and Alembic CLI picking up `DATABASE_URL` dynamically without hardcoded config URL. |
 | **Seed Data Idempotency** | **VERIFIED LOCALLY** | Repeated execution confirmed 0 duplicate rows inserted. |
-| **Docker Build / Runtime** | **NOT VERIFIED LOCALLY** | Docker daemon was offline/stopped during Phase 7.8 audit (`/Users/irfan/.docker/run/docker.sock: connect: no such file or directory`). Dockerfile syntax and entrypoint permissions verified statically. |
+| **Docker Build / Runtime** | **VERIFIED LOCALLY** | Successfully built backend and frontend images; executed full local compose stack with PostgreSQL 16; verified migrations, seeding, health probes, and Nginx reverse proxy routing. |
 | **Live Neon PostgreSQL Instance** | **NOT YET VERIFIED** | No cloud database provisioned during pre-deployment audit (policy constraint). Code-level dialect normalization (`postgresql+psycopg2://`), TLS params (`sslmode=require`), and pooling (`pool_recycle=300`) verified. |
 | **Live Render / Vercel Cloud Runtime** | **NOT YET VERIFIED** | No live cloud accounts or deployments created during pre-deployment audit (policy constraint). |
 
