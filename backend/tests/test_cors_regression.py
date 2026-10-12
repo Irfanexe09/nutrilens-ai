@@ -177,7 +177,7 @@ def test_production_mode_rejects_wildcard_cors_with_credentials():
             JWT_SECRET_KEY="a" * 32,
             DATABASE_URL="postgresql+psycopg2://user:pass@ep-test.neon.tech/db?sslmode=require",
             AI_PROVIDER="gemini",
-            GEMINI_API_KEY="AIzaSyRealGenuineProductionKey12345",
+            GEMINI_API_KEY="test_mock_gemini_production_key_for_test_12345",
             CORS_ORIGINS="*",
         )
 

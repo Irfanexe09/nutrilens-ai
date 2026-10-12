@@ -173,7 +173,7 @@ async def test_gemini_provider_passes_configured_model_to_api_client():
 async def test_gemini_provider_unavailable_model_404_handled_safely():
     """Verify that an unavailable-model 404 from Gemini raises AIProviderConfigError without exposing secrets."""
     provider = GeminiVisionAIProvider(
-        api_key="AIzaSySuperSecretKey1234567890",
+        api_key="mock_gemini_test_key_sample_1234567890",
         model_name="gemini-2.5-flash",
     )
 
@@ -203,13 +203,13 @@ async def test_gemini_provider_unavailable_model_404_handled_safely():
     assert "gemini-3.8-flash" in error_message
     assert "gemini-2.5-flash" in error_message
     # Critical security assertion: API key must NOT be leaked
-    assert "AIzaSySuperSecretKey1234567890" not in error_message
+    assert "mock_gemini_test_key_sample_1234567890" not in error_message
 
 
 @pytest.mark.asyncio
 async def test_gemini_provider_redacts_api_key_on_unexpected_error():
     """Verify that any unexpected error containing the API key is redacted."""
-    secret_key = "AIzaSySuperSecretKeyShouldBeRedacted"
+    secret_key = "mock_super_secret_key_should_be_redacted"
     provider = GeminiVisionAIProvider(api_key=secret_key)
 
     mock_aio = MagicMock()
@@ -523,7 +523,7 @@ async def test_gemini_provider_permanent_400_bad_request_fails_immediately():
 
 def test_gemini_provider_sanitize_message_redacts_keys_and_query_params():
     """Verify that _sanitize_message redacts the configured API key and query parameters."""
-    secret = "AIzaSySecretApiKey987654321"
+    secret = "mock_secret_api_key_987654321"
     provider = GeminiVisionAIProvider(api_key=secret)
 
     raw_msg = f"Request to https://generativelanguage.googleapis.com/v1beta?key={secret}&model=gemini failed with key {secret}"

@@ -19,9 +19,17 @@ import {
 } from 'firebase/storage';
 
 // Firebase configuration using project credentials from nutrilens-dc1f9
-// Values default to user's registered web app credentials and can be overridden via VITE_FIREBASE_* env vars
+// All sensitive keys must be provided via VITE_FIREBASE_* environment variables.
+const rawApiKey = (import.meta.env.VITE_FIREBASE_API_KEY as string | undefined)?.trim() || '';
+
+export const isFirebaseConfigured = Boolean(
+  rawApiKey &&
+  !rawApiKey.includes('placeholder') &&
+  !rawApiKey.includes('your_')
+);
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyC_nKfh6OLtUUgSfjJCGKIAWBo0YVwBny8',
+  apiKey: rawApiKey || 'unconfigured_placeholder_key',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'nutrilens-dc1f9.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'nutrilens-dc1f9',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'nutrilens-dc1f9.firebasestorage.app',
@@ -42,6 +50,9 @@ export const googleAuthProvider = new GoogleAuthProvider();
  * Sign in with Google Popup
  */
 export async function signInWithGoogle(): Promise<FirebaseUser> {
+  if (!isFirebaseConfigured) {
+    throw new Error('Firebase Authentication is not configured. Please set VITE_FIREBASE_API_KEY in your environment.');
+  }
   const result = await signInWithPopup(auth, googleAuthProvider);
   return result.user;
 }
@@ -53,6 +64,9 @@ export async function signInWithFirebaseEmail(
   email: string,
   pass: string
 ): Promise<FirebaseUser> {
+  if (!isFirebaseConfigured) {
+    throw new Error('Firebase Authentication is not configured. Missing VITE_FIREBASE_API_KEY.');
+  }
   const result = await signInWithEmailAndPassword(auth, email, pass);
   return result.user;
 }
@@ -64,6 +78,9 @@ export async function registerWithFirebaseEmail(
   email: string,
   pass: string
 ): Promise<FirebaseUser> {
+  if (!isFirebaseConfigured) {
+    throw new Error('Firebase Authentication is not configured. Missing VITE_FIREBASE_API_KEY.');
+  }
   const result = await createUserWithEmailAndPassword(auth, email, pass);
   return result.user;
 }
@@ -72,6 +89,7 @@ export async function registerWithFirebaseEmail(
  * Sign out from Firebase
  */
 export async function logOutFirebase(): Promise<void> {
+  if (!isFirebaseConfigured) return;
   await signOut(auth);
 }
 
@@ -84,6 +102,9 @@ export async function uploadFoodImageToStorage(
   file: File | Blob,
   fileName?: string
 ): Promise<string> {
+  if (!isFirebaseConfigured) {
+    throw new Error('Firebase Storage is not configured. Missing VITE_FIREBASE_API_KEY.');
+  }
   const timestamp = Date.now();
   const safeName = (fileName || (file instanceof File ? file.name : 'scan.jpg'))
     .replace(/[^a-zA-Z0-9.-]/g, '_');
