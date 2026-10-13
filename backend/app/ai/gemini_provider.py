@@ -26,6 +26,8 @@ from app.ai.base import (
     AIProviderUnavailableError,
     AIProviderTimeoutError,
     AIProviderResponseError,
+    AIProviderQuotaExhaustedError,
+    AIProviderRateLimitError,
 )
 from app.ai.prompts import (
     FOOD_ANALYSIS_SYSTEM_PROMPT,
@@ -120,16 +122,61 @@ class GeminiVisionAIProvider(AIProvider):
         sanitized = re.sub(r"key=[A-Za-z0-9_-]+", "key=[REDACTED_API_KEY]", sanitized)
         return sanitized
 
+    def _classify_quota_error(self, exc: Exception) -> Tuple[bool, bool]:
+        """
+        Distinguish 429 quota exhaustion from temporary per-minute rate limiting:
+        Returns: (is_quota_or_rate_limit, is_daily_quota_exhausted)
+        """
+        err_code = getattr(exc, "code", None)
+        err_str = str(exc).lower()
+
+        is_429 = (
+            err_code == 429
+            or "429" in err_str
+            or "resource_exhausted" in err_str
+            or "too many requests" in err_str
+        )
+        if not is_429:
+            return False, False
+
+        # Check for daily quota exhaustion markers in error message or response details
+        daily_markers = [
+            "per day",
+            "per_day",
+            "daily",
+            "requests per day",
+            "free tier limit",
+            "free-tier limit",
+            "limit: 20 per day",
+            "limit of 20 requests per day",
+            "quota metric 'generate content api requests per day'",
+            "exceeded your current quota",
+            "check your plan and billing details",
+        ]
+        is_daily = any(marker in err_str for marker in daily_markers)
+
+        # If response has a clear Retry-After header with a short wait (<= 60s), treat as burst rate limit
+        retry_after = self._extract_retry_after(exc)
+        if retry_after is not None and retry_after <= 60.0:
+            is_daily = False
+
+        return True, is_daily
+
     def _is_permanent_error(self, exc: Exception) -> bool:
         """
-        Determine if an exception represents a permanent failure that must NOT be retried:
+        Determine if an exception represents a permanent failure that must NOT be retried on the same model:
         - 400 Bad Request / Invalid Argument
         - 401 Unauthorized / Invalid API Key
         - 403 Forbidden / Permission Denied
         - 404 Not Found / Model deprecated or unavailable
+        - 429 Daily quota exhaustion
         """
         err_code = getattr(exc, "code", None)
         if err_code in (400, 401, 403, 404):
+            return True
+
+        _, is_daily = self._classify_quota_error(exc)
+        if is_daily:
             return True
 
         err_str = str(exc).lower()
@@ -144,19 +191,23 @@ class GeminiVisionAIProvider(AIProvider):
     def _is_transient_error(self, exc: Exception) -> bool:
         """
         Determine if an exception represents a transient failure that is safe to retry:
-        - 429 Too Many Requests / Resource Exhausted / Rate limit
         - 500 Internal Server Error
         - 502 Bad Gateway
         - 503 Service Unavailable / High Demand
         - 504 Gateway Timeout
         - ServerError from google.genai.errors
         - Network connection reset or timeout
+        - 429 ONLY when it represents a temporary per-minute burst rate limit
         """
         if self._is_permanent_error(exc):
             return False
 
         err_code = getattr(exc, "code", None)
-        if err_code in (429, 500, 502, 503, 504):
+        if err_code in (500, 502, 503, 504):
+            return True
+
+        is_quota, is_daily = self._classify_quota_error(exc)
+        if is_quota and not is_daily:
             return True
 
         if isinstance(exc, (ServerError, asyncio.TimeoutError, ConnectionError, TimeoutError)):
@@ -165,9 +216,8 @@ class GeminiVisionAIProvider(AIProvider):
         err_str = str(exc).lower()
         transient_patterns = [
             "503", "unavailable", "high demand", "spikes in demand", "temporarily unavailable",
-            "overloaded", "429", "resource_exhausted", "resource exhausted", "rate limit",
-            "quota", "too many requests", "500", "internal server error", "502", "bad gateway",
-            "504", "gateway timeout", "deadline exceeded", "timed out",
+            "overloaded", "rate limit", "too many requests", "500", "internal server error",
+            "502", "bad gateway", "504", "gateway timeout", "deadline exceeded", "timed out",
         ]
         return any(pattern in err_str for pattern in transient_patterns)
 
@@ -192,6 +242,7 @@ class GeminiVisionAIProvider(AIProvider):
         Build GenerateContentConfig tailored to the target model.
         For Gemini 3.x series models, configure thinking_level='low' to eliminate excessive reasoning latency.
         For Gemini 2.x and earlier models, omit thinking_config to avoid 400 INVALID_ARGUMENT errors.
+        Disables automatic function calling to prevent secondary remote round-trips during food image analysis.
         """
         config_kwargs: Dict[str, Any] = {
             "system_instruction": FOOD_ANALYSIS_SYSTEM_PROMPT,
@@ -203,6 +254,14 @@ class GeminiVisionAIProvider(AIProvider):
                 config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
             except Exception:
                 pass
+
+        try:
+            config_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(
+                disable=True, maximum_remote_calls=0
+            )
+        except Exception:
+            pass
+
         return types.GenerateContentConfig(**config_kwargs)
 
     async def _execute_generate_content_with_retry(
@@ -221,6 +280,8 @@ class GeminiVisionAIProvider(AIProvider):
         max_primary_attempts = 1 + max(0, self.max_retries)
         last_exception: Optional[Exception] = None
         session_tag = f"[session={session_id}] " if session_id else ""
+        primary_daily_quota_exhausted = False
+        primary_rate_limited = False
 
         # 1. Primary model attempts with bounded backoff
         for attempt_idx in range(max_primary_attempts):
@@ -261,46 +322,66 @@ class GeminiVisionAIProvider(AIProvider):
                 safe_err = self._sanitize_message(str(exc))
                 attempt_duration_ms = round((time.time() - attempt_start) * 1000, 1)
 
-                # Check permanent errors -> fail fast without retry
-                if self._is_permanent_error(exc):
-                    err_code = getattr(exc, "code", None)
-                    is_model_unavailable = (
-                        err_code == 404
-                        or "404" in safe_err
-                        or "not found" in safe_err.lower()
-                        or "no longer available" in safe_err.lower()
+                # Check 401/403 credentials -> fail fast without retry
+                err_code = getattr(exc, "code", None)
+                if (
+                    err_code in (401, 403)
+                    or "api key" in safe_err.lower()
+                    or "unauthenticated" in safe_err.lower()
+                    or "permission denied" in safe_err.lower()
+                ):
+                    logger.error(f"{session_tag}Gemini authentication failed after {attempt_duration_ms}ms: invalid or unauthorized API key.")
+                    raise AIProviderConfigError(
+                        "Invalid or unauthorized Gemini API key. Please check the GEMINI_API_KEY environment variable."
                     )
-                    if is_model_unavailable:
-                        logger.error(
-                            f"{session_tag}Gemini vision model '{self.model_name}' is unavailable or deprecated after {attempt_duration_ms}ms: {safe_err}"
-                        )
+
+                # Check 404 Model Not Found / Retired -> fail fast on this model
+                is_model_unavailable = (
+                    err_code == 404
+                    or "404" in safe_err
+                    or "not found" in safe_err.lower()
+                    or "no longer available" in safe_err.lower()
+                )
+                if is_model_unavailable:
+                    logger.error(
+                        f"{session_tag}Gemini vision model '{self.model_name}' is unavailable or deprecated after {attempt_duration_ms}ms: {safe_err}"
+                    )
+                    # If no fallback is configured, raise config error immediately
+                    if not self.fallback_model or self.fallback_model == self.model_name:
                         raise AIProviderConfigError(
                             f"Configured Gemini vision model '{self.model_name}' is unavailable or deprecated. "
                             "Please update GEMINI_MODEL to a supported vision model (e.g. 'gemini-3.8-flash')."
                         )
+                    # Break out of primary attempts to try fallback without retrying 404
+                    break
 
-                    if (
-                        err_code in (401, 403)
-                        or "api key" in safe_err.lower()
-                        or "unauthenticated" in safe_err.lower()
-                        or "permission denied" in safe_err.lower()
-                    ):
-                        logger.error(f"{session_tag}Gemini authentication failed after {attempt_duration_ms}ms: invalid or unauthorized API key.")
-                        raise AIProviderConfigError(
-                            "Invalid or unauthorized Gemini API key. Please check the GEMINI_API_KEY environment variable."
+                # Check 429 Quota Exhaustion vs Rate Limit
+                is_quota, is_daily = self._classify_quota_error(exc)
+                if is_quota:
+                    if is_daily:
+                        primary_daily_quota_exhausted = True
+                        logger.error(
+                            f"{session_tag}Primary model '{self.model_name}' free-tier daily quota exhausted after {attempt_duration_ms}ms: {safe_err}. "
+                            "Will NOT retry this model."
                         )
+                        # Break out immediately! Do NOT retry daily quota exhaustion on the same model
+                        break
+                    else:
+                        primary_rate_limited = True
+                        # Temporary burst limit: proceed to transient retry logic below
 
+                # Check permanent errors (400, etc.)
+                if self._is_permanent_error(exc):
                     logger.error(f"{session_tag}Permanent Gemini API error on model '{self.model_name}' after {attempt_duration_ms}ms: {safe_err}")
                     raise AIProviderError(f"Multimodal vision provider error: {safe_err}")
 
-                # Check if transient error
+                # Check if non-transient
                 if not self._is_transient_error(exc):
                     logger.error(f"{session_tag}Non-transient Gemini API error on model '{self.model_name}' after {attempt_duration_ms}ms: {safe_err}")
                     raise AIProviderError(f"Multimodal vision provider error: {safe_err}")
 
-                # Transient error handling
+                # Transient error handling (503, 500, 502, 504, or per-minute 429)
                 if attempt_idx < max_primary_attempts - 1:
-                    # Check for Retry-After header
                     retry_after = self._extract_retry_after(exc)
                     if retry_after is not None:
                         delay = min(retry_after + random.uniform(0.0, 0.25), self.retry_max_delay)
@@ -311,7 +392,7 @@ class GeminiVisionAIProvider(AIProvider):
 
                     # Check remaining time budget
                     remaining_after_sleep = (deadline - time.time()) - delay
-                    if remaining_after_sleep <= 0.2:
+                    if remaining_after_sleep <= 0.5:
                         logger.warning(
                             f"{session_tag}Cannot retry transient error on '{self.model_name}' (attempt {attempt_idx + 1}/{max_primary_attempts}): "
                             f"delay ({delay:.2f}s) would leave insufficient deadline ({deadline - time.time():.2f}s remaining)."
@@ -329,15 +410,15 @@ class GeminiVisionAIProvider(AIProvider):
                         f"due to transient error: {safe_err}"
                     )
 
-        # 2. Primary attempts exhausted. Attempt one fallback model if configured and different.
+        # 2. Primary attempts exhausted or broken. Attempt fallback model if configured and different.
         if self.fallback_model and self.fallback_model != self.model_name:
             remaining = deadline - time.time()
-            if remaining > 0.1:
+            if remaining > 0.5:
                 total_attempts += 1
                 fallback_timeout = min(self.per_attempt_timeout, remaining)
                 fb_start = time.time()
                 logger.info(
-                    f"{session_tag}Primary model '{self.model_name}' temporarily unavailable. "
+                    f"{session_tag}Primary model '{self.model_name}' unavailable. "
                     f"Attempting fallback model '{self.fallback_model}' (timeout: {fallback_timeout:.1f}s, remaining: {remaining:.1f}s)..."
                 )
                 try:
@@ -358,24 +439,48 @@ class GeminiVisionAIProvider(AIProvider):
                     safe_fb_err = self._sanitize_message(str(fb_exc))
                     fb_duration_ms = round((time.time() - fb_start) * 1000, 1)
                     logger.error(f"{session_tag}Fallback model '{self.fallback_model}' failed after {fb_duration_ms}ms: {safe_fb_err}")
-                    if self._is_permanent_error(fb_exc):
-                        err_code = getattr(fb_exc, "code", None)
-                        if err_code in (401, 403) or "api key" in safe_fb_err.lower():
-                            raise AIProviderConfigError("Invalid or unauthorized Gemini API key.")
+
+                    err_code = getattr(fb_exc, "code", None)
+                    if err_code in (401, 403) or "api key" in safe_fb_err.lower():
+                        raise AIProviderConfigError("Invalid or unauthorized Gemini API key.")
+
+                    fb_is_quota, fb_is_daily = self._classify_quota_error(fb_exc)
+                    if fb_is_daily or primary_daily_quota_exhausted:
+                        raise AIProviderQuotaExhaustedError(
+                            "Daily AI vision analysis quota has been reached. Please try again tomorrow, or check your API quota in Google AI Studio."
+                        )
             else:
                 logger.warning(
                     f"{session_tag}Insufficient time remaining ({remaining:.2f}s) to attempt fallback model '{self.fallback_model}'."
                 )
 
-        # 3. Both primary (and fallback) failed due to transient conditions or timeout
+        # 3. Post-execution exception mapping
+        if primary_daily_quota_exhausted:
+            raise AIProviderQuotaExhaustedError(
+                "Daily AI vision analysis quota has been reached. Please try again tomorrow, or check your API quota in Google AI Studio."
+            )
+
+        if primary_rate_limited:
+            raise AIProviderRateLimitError(
+                "The AI vision service is receiving requests too quickly. Please wait a moment and try again."
+            )
+
         if isinstance(last_exception, asyncio.TimeoutError):
             raise AIProviderTimeoutError(
                 f"Food analysis timed out after {self.timeout} seconds. The vision service is experiencing high latency."
             )
 
+        safe_err = self._sanitize_message(str(last_exception or ""))
+        if "404" in safe_err or "not found" in safe_err.lower() or "no longer available" in safe_err.lower():
+            raise AIProviderConfigError(
+                f"Configured Gemini vision model '{self.model_name}' is unavailable or deprecated. "
+                "Please update GEMINI_MODEL to a supported vision model (e.g. 'gemini-3.8-flash')."
+            )
+
         raise AIProviderUnavailableError(
             "The AI vision service is currently experiencing high demand. Please try again in a few moments."
         )
+
 
     async def analyze_food_image(
         self, image_bytes: bytes, filename: str, session_id: Optional[str] = None

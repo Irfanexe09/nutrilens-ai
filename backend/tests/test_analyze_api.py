@@ -13,6 +13,8 @@ from app.ai.base import (
     AIProviderConfigError,
     AIProviderTimeoutError,
     AIProviderResponseError,
+    AIProviderQuotaExhaustedError,
+    AIProviderRateLimitError,
 )
 from app.schemas.analyze import (
     EstimatedPortionSchema,
@@ -302,3 +304,62 @@ def test_pydantic_schemas_validation():
     # Negative portion value must fail validation
     with pytest.raises(ValidationError):
         EstimatedPortionSchema(value=-10.0, unit="g")
+
+
+def test_analyze_endpoint_returns_429_on_daily_quota_exhausted(
+    client: TestClient, sample_image_bytes: bytes, auth_headers: dict
+):
+    """Verify that POST /api/analyze returns HTTP 429 when daily quota is exhausted."""
+    with patch("app.services.analysis_service.get_ai_provider") as mock_get_provider:
+        mock_provider = AsyncMock()
+        mock_provider.analyze_food_image.side_effect = AIProviderQuotaExhaustedError(
+            "Daily AI vision analysis quota has been reached. Please try again tomorrow, or check your API quota in Google AI Studio."
+        )
+        mock_get_provider.return_value = mock_provider
+
+        files = {"image": ("meal.jpg", sample_image_bytes, "image/jpeg")}
+        response = client.post("/api/analyze", files=files, headers=auth_headers)
+
+        assert response.status_code == 429
+        detail = response.json()["detail"]
+        assert "daily" in detail.lower()
+        assert "tomorrow" in detail.lower()
+
+
+def test_analyze_endpoint_returns_429_on_burst_rate_limit(
+    client: TestClient, sample_image_bytes: bytes, auth_headers: dict
+):
+    """Verify that POST /api/analyze returns HTTP 429 when AI provider rate limits bursts."""
+    with patch("app.services.analysis_service.get_ai_provider") as mock_get_provider:
+        mock_provider = AsyncMock()
+        mock_provider.analyze_food_image.side_effect = AIProviderRateLimitError(
+            "The AI vision service is receiving requests too quickly. Please wait a moment and try again."
+        )
+        mock_get_provider.return_value = mock_provider
+
+        files = {"image": ("meal.jpg", sample_image_bytes, "image/jpeg")}
+        response = client.post("/api/analyze", files=files, headers=auth_headers)
+
+        assert response.status_code == 429
+        detail = response.json()["detail"]
+        assert "too quickly" in detail.lower()
+
+
+def test_analyze_endpoint_returns_503_on_provider_config_error(
+    client: TestClient, sample_image_bytes: bytes, auth_headers: dict
+):
+    """Verify that POST /api/analyze returns HTTP 503 when model is deprecated or misconfigured."""
+    with patch("app.services.analysis_service.get_ai_provider") as mock_get_provider:
+        mock_provider = AsyncMock()
+        mock_provider.analyze_food_image.side_effect = AIProviderConfigError(
+            "Configured Gemini vision model 'gemini-2.0-flash' is unavailable or deprecated."
+        )
+        mock_get_provider.return_value = mock_provider
+
+        files = {"image": ("meal.jpg", sample_image_bytes, "image/jpeg")}
+        response = client.post("/api/analyze", files=files, headers=auth_headers)
+
+        assert response.status_code == 503
+        detail = response.json()["detail"]
+        assert "unavailable or deprecated" in detail.lower()
+

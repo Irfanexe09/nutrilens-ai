@@ -221,7 +221,67 @@ describe('ScanFood Component - Direct AI Vision Analysis (No Cloud Storage Depen
     expect(await screen.findByText(/Food analysis timed out. The vision model took too long to respond/i)).toBeInTheDocument();
   });
 
-  it('8. File validation: rejects files exceeding 10MB limit', async () => {
+  it('8. Analysis failure handling: displays distinct Daily Quota Notice on 429 daily quota exhaustion', async () => {
+    const user = userEvent.setup();
+    const apiError = new ApiError(
+      'Daily AI vision quota exhausted. Free-tier quota has been reached for today. Please try again tomorrow.',
+      429
+    );
+    vi.spyOn(api, 'analyzeImage').mockRejectedValue(apiError);
+
+    const { container } = render(
+      <ScanFood onAnalysisComplete={vi.fn()} onExploreDemo={vi.fn()} />
+    );
+
+    selectTestFile(container);
+    const analyzeBtn = await screen.findByRole('button', { name: /analyze food/i });
+    await user.click(analyzeBtn);
+
+    expect(await screen.findByText('Daily Quota Notice')).toBeInTheDocument();
+    expect(screen.getByText(/Daily AI vision quota exhausted/i)).toBeInTheDocument();
+  });
+
+  it('9. Analysis failure handling: displays Rate Limit Notice on 429 burst rate limits', async () => {
+    const user = userEvent.setup();
+    const apiError = new ApiError(
+      'The AI vision service is receiving requests too quickly. Please wait a moment and try again.',
+      429
+    );
+    vi.spyOn(api, 'analyzeImage').mockRejectedValue(apiError);
+
+    const { container } = render(
+      <ScanFood onAnalysisComplete={vi.fn()} onExploreDemo={vi.fn()} />
+    );
+
+    selectTestFile(container);
+    const analyzeBtn = await screen.findByRole('button', { name: /analyze food/i });
+    await user.click(analyzeBtn);
+
+    expect(await screen.findByText('Rate Limit Notice')).toBeInTheDocument();
+    expect(screen.getByText(/The AI vision service is receiving requests too quickly/i)).toBeInTheDocument();
+  });
+
+  it('10. Analysis failure handling: displays configuration notice on 503 provider model error', async () => {
+    const user = userEvent.setup();
+    const apiError = new ApiError(
+      "Configured Gemini vision model 'gemini-2.0-flash' is unavailable or deprecated.",
+      503
+    );
+    vi.spyOn(api, 'analyzeImage').mockRejectedValue(apiError);
+
+    const { container } = render(
+      <ScanFood onAnalysisComplete={vi.fn()} onExploreDemo={vi.fn()} />
+    );
+
+    selectTestFile(container);
+    const analyzeBtn = await screen.findByRole('button', { name: /analyze food/i });
+    await user.click(analyzeBtn);
+
+    expect(await screen.findByText(/Analysis Notice/i)).toBeInTheDocument();
+    expect(screen.getByText(/unavailable or deprecated/i)).toBeInTheDocument();
+  });
+
+  it('11. File validation: rejects files exceeding 10MB limit', async () => {
     const largeFile = new File([new ArrayBuffer(11 * 1024 * 1024)], 'huge.jpg', { type: 'image/jpeg' });
     const { container } = render(
       <ScanFood onAnalysisComplete={vi.fn()} onExploreDemo={vi.fn()} />
@@ -233,7 +293,7 @@ describe('ScanFood Component - Direct AI Vision Analysis (No Cloud Storage Depen
     expect(screen.queryByText('huge.jpg')).not.toBeInTheDocument();
   });
 
-  it('9. File validation: rejects unsupported media types', async () => {
+  it('12. File validation: rejects unsupported media types', async () => {
     const pdfFile = new File(['%PDF content'], 'document.pdf', { type: 'application/pdf' });
     const { container } = render(
       <ScanFood onAnalysisComplete={vi.fn()} onExploreDemo={vi.fn()} />

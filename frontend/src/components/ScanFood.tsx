@@ -148,8 +148,20 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
       } else if (err instanceof ApiError) {
         if (err.status === 401) {
           setErrorMessage('Your session has expired or authentication is required. Please sign in to analyze your meal.');
+        } else if (err.status === 429) {
+          const detail = (err.message || '').toLowerCase();
+          if (detail.includes('daily') || detail.includes('tomorrow') || detail.includes('quota')) {
+            setErrorMessage(err.message || 'Daily AI vision quota exhausted. Free-tier quota has been reached for today. Please try again tomorrow.');
+          } else {
+            setErrorMessage(err.message || 'The AI vision service is receiving requests too quickly. Please wait a moment and try again.');
+          }
         } else if (err.status === 503) {
-          setErrorMessage(err.message || 'The AI vision service is currently experiencing high demand. Please try again in a few moments.');
+          const detail = (err.message || '').toLowerCase();
+          if (detail.includes('config') || detail.includes('deprecated') || detail.includes('unavailable or deprecated') || detail.includes('key')) {
+            setErrorMessage(err.message || 'AI vision service is temporarily unavailable due to a provider configuration issue.');
+          } else {
+            setErrorMessage(err.message || 'The AI vision service is currently experiencing high demand. Please try again in a few moments.');
+          }
         } else if (err.status === 504) {
           setErrorMessage('Food analysis timed out. The vision model took too long to respond. Please try again in a few moments.');
         } else if (err.status === 413) {
@@ -292,6 +304,10 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                 <span className="font-bold block">
                   {errorMessage.includes('sign in') || errorMessage.includes('register')
                     ? 'Authentication Required'
+                    : errorMessage.toLowerCase().includes('quota')
+                    ? 'Daily Quota Notice'
+                    : errorMessage.toLowerCase().includes('rate') || errorMessage.toLowerCase().includes('quickly')
+                    ? 'Rate Limit Notice'
                     : 'Analysis Notice'}
                 </span>
                 <span className="leading-relaxed">{errorMessage}</span>

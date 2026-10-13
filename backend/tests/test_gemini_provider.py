@@ -9,6 +9,8 @@ from app.ai.base import (
     AIProviderTimeoutError,
     AIProviderResponseError,
     AIProviderError,
+    AIProviderQuotaExhaustedError,
+    AIProviderRateLimitError,
 )
 from app.ai.gemini_provider import GeminiVisionAIProvider
 from app.ai.placeholder_provider import PlaceholderAIProvider
@@ -794,5 +796,147 @@ async def test_analyze_endpoint_never_fabricates_data_on_provider_failure(monkey
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         analysis_rate_limiter.reset()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_daily_quota_exhaustion_does_not_retry_and_raises_quota_error():
+    """Verify that HTTP 429 indicating daily quota exhaustion fails immediately without wasteful retries."""
+    provider = GeminiVisionAIProvider(
+        api_key="valid_key",
+        model_name="gemini-3.8-flash",
+        fallback_model=None,
+        max_retries=2,
+        retry_base_delay=0.001,
+    )
+
+    mock_429_daily = ClientError(
+        code=429,
+        response_json={
+            "error": {
+                "code": 429,
+                "message": "Resource has been exhausted (e.g. check quota). GenerateContent requests per day: limit: 20 per day.",
+                "status": "RESOURCE_EXHAUSTED",
+            }
+        },
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_429_daily)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderQuotaExhaustedError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    # MUST NOT retry when daily quota is exhausted
+    assert mock_aio.models.generate_content.call_count == 1
+    assert "daily" in str(exc_info.value).lower()
+    assert "tomorrow" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_burst_rate_limit_retries_and_raises_rate_limit_error():
+    """Verify that HTTP 429 burst rate limits are retried with backoff and raise AIProviderRateLimitError when exhausted."""
+    provider = GeminiVisionAIProvider(
+        api_key="valid_key",
+        model_name="gemini-3.8-flash",
+        fallback_model=None,
+        max_retries=1,
+        retry_base_delay=0.001,
+        retry_max_delay=0.005,
+    )
+
+    mock_429_burst = ClientError(
+        code=429,
+        response_json={
+            "error": {
+                "code": 429,
+                "message": "Resource has been exhausted: rate limit exceeded. Please wait a moment.",
+                "status": "RESOURCE_EXHAUSTED",
+            }
+        },
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_429_burst)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderRateLimitError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    # Initial attempt + 1 retry = 2 attempts
+    assert mock_aio.models.generate_content.call_count == 2
+    assert "receiving requests too quickly" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_404_model_not_found_fails_fast_with_config_error():
+    """Verify that HTTP 404 (model deprecated or invalid) fails immediately without retry and raises AIProviderConfigError."""
+    provider = GeminiVisionAIProvider(
+        api_key="valid_key",
+        model_name="gemini-2.0-flash",
+        fallback_model=None,
+        max_retries=2,
+        retry_base_delay=0.001,
+    )
+
+    mock_404 = ClientError(
+        code=404,
+        response_json={
+            "error": {
+                "code": 404,
+                "message": "models/gemini-2.0-flash is not found for API version v1beta, or is no longer available.",
+                "status": "NOT_FOUND",
+            }
+        },
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_404)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderConfigError) as exc_info:
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    assert mock_aio.models.generate_content.call_count == 1
+    assert "unavailable or deprecated" in str(exc_info.value).lower()
+    assert "gemini_model" in str(exc_info.value).lower()
+
+
+def test_gemini_provider_automatic_function_calling_explicitly_disabled():
+    """Verify that automatic function calling is explicitly disabled on GenerateContentConfig."""
+    provider = GeminiVisionAIProvider(api_key="valid_key")
+    cfg = provider._build_content_config("gemini-3.8-flash")
+
+    assert hasattr(cfg, "automatic_function_calling")
+    assert cfg.automatic_function_calling is not None
+    assert getattr(cfg.automatic_function_calling, "disable", None) is True
+    assert getattr(cfg.automatic_function_calling, "maximum_remote_calls", None) == 0
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_fallback_disabled_by_default_in_constructor():
+    """Verify that GeminiVisionAIProvider default fallback_model is None and doesn't call fallback."""
+    provider = GeminiVisionAIProvider(api_key="valid_key", max_retries=0)
+    assert provider.fallback_model is None
+
+    mock_503 = ServerError(
+        code=503,
+        response_json={"error": {"code": 503, "message": "Temporarily unavailable", "status": "UNAVAILABLE"}},
+    )
+
+    mock_aio = MagicMock()
+    mock_aio.models.generate_content = AsyncMock(side_effect=mock_503)
+    provider._client = MagicMock()
+    provider._client.aio = mock_aio
+
+    with pytest.raises(AIProviderUnavailableError):
+        await provider.analyze_food_image(b"fake_image", "dish.jpg")
+
+    # Exactly 1 call (no retries, no fallback attempted)
+    assert mock_aio.models.generate_content.call_count == 1
+
 
 

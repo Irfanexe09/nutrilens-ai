@@ -28,6 +28,17 @@ class AIProviderUnavailableError(AIProviderError):
     pass
 
 
+class AIProviderQuotaExhaustedError(AIProviderError):
+    """Raised when the AI provider's quota (e.g. daily quota) has been exhausted."""
+    pass
+
+
+class AIProviderRateLimitError(AIProviderError):
+    """Raised when an AI provider call is temporarily rate-limited (e.g. per-minute burst)."""
+    pass
+
+
+
 @dataclass
 class EstimatedPortion:
     value: float

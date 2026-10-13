@@ -221,12 +221,12 @@ def test_gemini_model_normalization_strips_models_prefix_and_quotes():
 
 
 def test_gemini_fallback_model_normalization():
-    """Verify that GEMINI_FALLBACK_MODEL defaults to gemini-2.0-flash and strips models/ prefix and disabled states."""
+    """Verify that GEMINI_FALLBACK_MODEL defaults to None (disabled by default) and strips models/ prefix and disabled states."""
     cfg_default = Settings()
-    assert cfg_default.GEMINI_FALLBACK_MODEL == "gemini-2.0-flash"
+    assert cfg_default.GEMINI_FALLBACK_MODEL is None
 
-    cfg_prefix = Settings(GEMINI_FALLBACK_MODEL="models/gemini-2.0-flash")
-    assert cfg_prefix.GEMINI_FALLBACK_MODEL == "gemini-2.0-flash"
+    cfg_prefix = Settings(GEMINI_FALLBACK_MODEL="models/gemini-2.5-flash")
+    assert cfg_prefix.GEMINI_FALLBACK_MODEL == "gemini-2.5-flash"
 
     cfg_disabled = Settings(GEMINI_FALLBACK_MODEL="none")
     assert cfg_disabled.GEMINI_FALLBACK_MODEL is None

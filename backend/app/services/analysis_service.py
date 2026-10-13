@@ -15,6 +15,8 @@ from app.ai.base import (
     AIProviderUnavailableError,
     AIProviderTimeoutError,
     AIProviderResponseError,
+    AIProviderQuotaExhaustedError,
+    AIProviderRateLimitError,
 )
 from app.schemas.analyze import (
     FoodAnalysisResponse,
@@ -155,6 +157,20 @@ class AnalysisService:
         try:
             ai_result = await provider.analyze_food_image(
                 image_bytes=content, filename=filename, session_id=session_id
+            )
+        except AIProviderQuotaExhaustedError as e:
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.error(f"[session={session_id}] AI vision daily quota exhausted after {elapsed_ms}ms: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=str(e) or "Daily AI vision quota exhausted. Free-tier quota has been reached for today. Please try again tomorrow.",
+            )
+        except AIProviderRateLimitError as e:
+            elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
+            logger.warning(f"[session={session_id}] AI vision rate limited after {elapsed_ms}ms: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=str(e) or "The AI vision service is receiving requests too quickly. Please wait a moment and try again.",
             )
         except AIProviderConfigError as e:
             elapsed_ms = round((time.time() - req_start_time) * 1000, 1)
