@@ -26,19 +26,19 @@ def create_test_indian_dish_image(dish_name: str) -> bytes:
     return buf.getvalue()
 
 
-def test_phase2_e2e_flow():
-    client = TestClient(app)
-
+def test_phase2_e2e_flow(client: TestClient, auth_headers: dict):
     # 1. Test invalid image rejection (corrupted, text file, empty)
     res_txt = client.post(
         "/api/analyze",
         files={"image": ("notes.txt", b"some notes", "text/plain")},
+        headers=auth_headers,
     )
     assert res_txt.status_code == 415, f"Expected 415, got {res_txt.status_code}"
 
     res_empty = client.post(
         "/api/analyze",
         files={"image": ("empty.jpg", b"", "image/jpeg")},
+        headers=auth_headers,
     )
     assert res_empty.status_code == 400, f"Expected 400, got {res_empty.status_code}"
 
@@ -47,7 +47,9 @@ def test_phase2_e2e_flow():
     response = client.post(
         "/api/analyze",
         files={"image": ("chicken_biryani_plate.jpg", image_bytes, "image/jpeg")},
+        headers=auth_headers,
     )
+
 
     # 3. Verify backend response
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"

@@ -218,8 +218,10 @@ export const App: React.FC = () => {
           <ScanFood
             onAnalysisComplete={handleAnalysisCompleted}
             onExploreDemo={handleLaunchDemo}
+            onSignInClick={() => setActiveTab('profile')}
           />
         )}
+
 
         {activeTab === 'demo' && (
           <AnalysisResult

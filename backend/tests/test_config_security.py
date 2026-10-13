@@ -55,7 +55,7 @@ def test_development_settings_allows_convenient_defaults():
     assert dev_settings.is_production() is False
 
 
-def test_analyze_with_gemini_missing_key_returns_503(client: TestClient, sample_image_bytes: bytes):
+def test_analyze_with_gemini_missing_key_returns_503(client: TestClient, sample_image_bytes: bytes, auth_headers: dict):
     """
     Verify that when AI_PROVIDER is 'gemini' and GEMINI_API_KEY is missing,
     the API returns HTTP 503 instead of silently pretending analysis succeeded.
@@ -67,9 +67,10 @@ def test_analyze_with_gemini_missing_key_returns_503(client: TestClient, sample_
         settings.GEMINI_API_KEY = None
 
         files = {"image": ("food.jpg", sample_image_bytes, "image/jpeg")}
-        response = client.post("/api/analyze", files=files)
+        response = client.post("/api/analyze", files=files, headers=auth_headers)
 
         assert response.status_code == 503
+
         data = response.json()
         assert "GEMINI_API_KEY" in data["detail"]
         assert "not configured" in data["detail"].lower()

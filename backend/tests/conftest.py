@@ -79,3 +79,30 @@ def sample_image_bytes() -> bytes:
     img = Image.new("RGB", (100, 100), color=(200, 100, 50))
     img.save(buf, format="JPEG")
     return buf.getvalue()
+
+
+@pytest.fixture
+def auth_user(db_session):
+    from app.models.user import User
+    from app.core.security import hash_password
+
+    user = User(
+        id="test-auth-user-id",
+        email="test_auth_user@nutrilens.ai",
+        name="Test Authenticated User",
+        hashed_password=hash_password("Secr3tP@ssword!"),
+        token_version=1,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def auth_headers(auth_user):
+    from app.core.security import create_access_token
+
+    token = create_access_token(subject=auth_user.id)
+    return {"Authorization": f"Bearer {token}"}
+

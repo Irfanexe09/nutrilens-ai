@@ -270,7 +270,7 @@ def test_unauthenticated_cannot_optimize_or_modify_private_meal(
 
 # --- 2. Image Upload Security & Pillow Decompression Bomb Tests ---
 
-def test_image_format_mismatch_rejected(client: TestClient):
+def test_image_format_mismatch_rejected(client: TestClient, auth_headers: dict):
     """
     Simulate polyglot or format confusion attack:
     File header claims image/jpeg, but actual payload is a BMP image.
@@ -281,12 +281,12 @@ def test_image_format_mismatch_rejected(client: TestClient):
     bmp_bytes = buf.getvalue()
 
     files = {"image": ("disguised.jpg", bmp_bytes, "image/jpeg")}
-    res = client.post("/api/analyze", files=files)
+    res = client.post("/api/analyze", files=files, headers=auth_headers)
     assert res.status_code == 415
     assert "unsupported decoded image format" in res.json()["detail"].lower()
 
 
-def test_huge_resolution_decompression_bomb_rejected(client: TestClient):
+def test_huge_resolution_decompression_bomb_rejected(client: TestClient, auth_headers: dict):
     """
     Image resolution exceeding allowable limits (e.g. >6000px) must be rejected
     before consuming server memory.
@@ -298,9 +298,10 @@ def test_huge_resolution_decompression_bomb_rejected(client: TestClient):
     large_bytes = buf.getvalue()
 
     files = {"image": ("bomb.jpg", large_bytes, "image/jpeg")}
-    res = client.post("/api/analyze", files=files)
+    res = client.post("/api/analyze", files=files, headers=auth_headers)
     assert res.status_code == 400
     assert "decompression bomb" in res.json()["detail"].lower() or "resolution" in res.json()["detail"].lower()
+
 
 
 def test_upload_retention_cleanup_helper(tmp_path):

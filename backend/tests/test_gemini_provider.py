@@ -267,6 +267,12 @@ async def test_analyze_endpoint_returns_503_on_unavailable_model(monkeypatch):
         b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
     )
 
+    from app.core.security import get_current_user
+    from app.models.user import User
+
+    dummy_user = User(id="test-gemini-user", email="test@nutrilens.ai", name="Test User")
+    app.dependency_overrides[get_current_user] = lambda: dummy_user
+
     try:
         response = client.post(
             "/api/analyze",
@@ -279,7 +285,9 @@ async def test_analyze_endpoint_returns_503_on_unavailable_model(monkeypatch):
         assert "gemini-3.8-flash" in detail
         assert "secret_test_key" not in detail
     finally:
+        app.dependency_overrides.pop(get_current_user, None)
         analysis_rate_limiter.reset()
+
 
 
 @pytest.mark.asyncio
@@ -576,6 +584,12 @@ async def test_analyze_endpoint_returns_503_on_transient_high_demand(monkeypatch
         b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
     )
 
+    from app.core.security import get_current_user
+    from app.models.user import User
+
+    dummy_user = User(id="test-gemini-user", email="test@nutrilens.ai", name="Test User")
+    app.dependency_overrides[get_current_user] = lambda: dummy_user
+
     try:
         response = client.post(
             "/api/analyze",
@@ -588,7 +602,9 @@ async def test_analyze_endpoint_returns_503_on_transient_high_demand(monkeypatch
         assert "try again" in detail.lower()
         assert "secret_test_key" not in detail
     finally:
+        app.dependency_overrides.pop(get_current_user, None)
         analysis_rate_limiter.reset()
+
 
 
 def test_gemini_provider_configures_low_thinking_level_for_gemini_3():
@@ -700,6 +716,12 @@ async def test_analyze_endpoint_returns_504_on_timeout(monkeypatch):
         b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
     )
 
+    from app.core.security import get_current_user
+    from app.models.user import User
+
+    dummy_user = User(id="test-gemini-user", email="test@nutrilens.ai", name="Test User")
+    app.dependency_overrides[get_current_user] = lambda: dummy_user
+
     try:
         response = client.post(
             "/api/analyze",
@@ -712,6 +734,7 @@ async def test_analyze_endpoint_returns_504_on_timeout(monkeypatch):
         assert "try again" in detail.lower()
         assert "secret_test_key" not in detail
     finally:
+        app.dependency_overrides.pop(get_current_user, None)
         analysis_rate_limiter.reset()
 
 
@@ -750,6 +773,12 @@ async def test_analyze_endpoint_never_fabricates_data_on_provider_failure(monkey
         b"\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
     )
 
+    from app.core.security import get_current_user
+    from app.models.user import User
+
+    dummy_user = User(id="test-gemini-user", email="test@nutrilens.ai", name="Test User")
+    app.dependency_overrides[get_current_user] = lambda: dummy_user
+
     try:
         response = client.post(
             "/api/analyze",
@@ -763,5 +792,7 @@ async def test_analyze_endpoint_never_fabricates_data_on_provider_failure(monkey
         assert "calories" not in body
         assert "status" not in body or body["status"] != "success"
     finally:
+        app.dependency_overrides.pop(get_current_user, None)
         analysis_rate_limiter.reset()
+
 

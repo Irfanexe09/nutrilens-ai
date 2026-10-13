@@ -7,13 +7,10 @@ import {
   ArrowRight,
   Loader2,
   Sparkles,
-  CheckCircle2,
-  Info,
 } from 'lucide-react';
 import { api, ApiError } from '../services/api';
 import { FoodAnalysisResponse, DetectedFoodItem } from '../types';
 import { FoodConfirmation } from './FoodConfirmation';
-import { uploadFoodImageToStorage } from '../services/firebase';
 
 interface ScanFoodProps {
   onAnalysisComplete: (
@@ -23,32 +20,26 @@ interface ScanFoodProps {
     confirmedFoods: DetectedFoodItem[]
   ) => void;
   onExploreDemo: () => void;
+  onSignInClick?: () => void;
 }
 
 export type ScanPipelineStage =
   | 'idle'
   | 'validating'
-  | 'uploading'
   | 'analyzing'
   | 'results';
 
 export const ScanFood: React.FC<ScanFoodProps> = ({
   onAnalysisComplete,
   onExploreDemo,
+  onSignInClick,
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<ScanPipelineStage>('idle');
   const [loadingStep, setLoadingStep] = useState<string>('Analyzing your meal...');
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [storageStatus, setStorageStatus] = useState<'idle' | 'uploaded' | 'direct' | 'fallback'>('idle');
-  const [storageNotice, setStorageNotice] = useState<{
-    type: 'info' | 'warning' | 'success';
-    message: string;
-  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isUploaded, setIsUploaded] = useState(false);
 
   // References for cancellation and double-click prevention
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -60,7 +51,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const isLoading = pipelineStage === 'validating' || pipelineStage === 'uploading' || pipelineStage === 'analyzing';
+  const isLoading = pipelineStage === 'validating' || pipelineStage === 'analyzing';
 
   useEffect(() => {
     return () => {
@@ -72,14 +63,11 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
         abortControllerRef.current.abort();
       }
     };
-  }, []);
+  }, [previewUrl]);
 
   const validateAndSetFile = (file: File) => {
     setErrorMessage(null);
     setAnalysisResult(null);
-    setStorageNotice(null);
-    setStorageStatus('idle');
-    setIsUploaded(false);
 
     // Validate size (10 MB)
     if (file.size > 10 * 1024 * 1024) {
@@ -129,98 +117,38 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     if (!selectedFile || !previewUrl) return;
     if (isSubmittingRef.current || isLoading) return;
 
+    // Authentication Guard: Prompt user to sign in or register before proceeding
+    const token = api.getToken();
+    if (!token) {
+      setErrorMessage('Please sign in or register to analyze your meal photos.');
+      setPipelineStage('idle');
+      return;
+    }
+
     isSubmittingRef.current = true;
     setErrorMessage(null);
-    setStorageNotice(null);
-    setUploadProgress(0);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
     try {
-      // 1. Upload to Firebase Cloud Storage (or Direct Mode Fallback)
-      setPipelineStage('uploading');
-      setLoadingStep('Uploading food photo to cloud storage...');
-
-      try {
-        const cloudUrl = await uploadFoodImageToStorage(selectedFile, {
-          signal: controller.signal,
-          timeoutMs: 15000,
-          onProgress: (progress) => {
-            setUploadProgress(progress.progressPercent);
-            setLoadingStep(`Uploading food photo to cloud storage (${progress.progressPercent}%)...`);
-          },
-        });
-        setPreviewUrl(cloudUrl);
-        setIsUploaded(true);
-        setStorageStatus('uploaded');
-        setStorageNotice({
-          type: 'success',
-          message: 'Photo securely stored in Firebase Cloud Storage.',
-        });
-      } catch (storageErr: any) {
-        // Safe diagnostic logging: error code and name only, never credentials
-        console.warn('[ScanFood] Cloud storage notice:', {
-          code: storageErr?.code || 'unknown',
-          name: storageErr?.name || 'Error',
-        });
-
-        // If the user aborted the operation, stop immediately
-        if (controller.signal.aborted || storageErr?.code === 'storage/canceled') {
-          setPipelineStage('idle');
-          isSubmittingRef.current = false;
-          setUploadProgress(null);
-          setLoadingStep('');
-          return;
-        }
-
-        // Non-blocking fallback: Inform the user while continuing to AI analysis
-        setIsUploaded(false);
-        if (storageErr?.code === 'storage/unauthenticated') {
-          setStorageStatus('direct');
-          setStorageNotice({
-            type: 'info',
-            message: 'Direct analysis mode: Cloud backup skipped (sign in to sync photos across devices).',
-          });
-        } else if (storageErr?.code === 'storage/timeout') {
-          setStorageStatus('fallback');
-          setStorageNotice({
-            type: 'warning',
-            message: 'Cloud storage upload timed out after 15s. Continuing with direct AI analysis.',
-          });
-        } else {
-          setStorageStatus('fallback');
-          setStorageNotice({
-            type: 'warning',
-            message: 'Cloud storage unavailable. Continuing with direct AI analysis.',
-          });
-        }
-      }
-
-      // Check if user cancelled while cloud upload was resolving
-      if (controller.signal.aborted) {
-        setPipelineStage('idle');
-        isSubmittingRef.current = false;
-        return;
-      }
-
-      // 2. Multimodal Vision AI Evaluation
-      setUploadProgress(null);
+      // Direct AI Vision Analysis (bypassing Firebase Cloud Storage)
       setPipelineStage('analyzing');
-      setLoadingStep('Multimodal vision evaluating food items and portions...');
+      setLoadingStep('Direct AI vision evaluating food items and estimating portion sizes...');
 
       const response = await api.analyzeImage(selectedFile, controller.signal);
       setAnalysisResult(response);
       setPipelineStage('results');
     } catch (err: unknown) {
+
       setPipelineStage('idle');
-      // If AI analysis fails, clear any secondary storage notice so user sees only the primary actionable error
-      setStorageNotice(null);
 
       if (controller.signal.aborted) {
         setErrorMessage('Meal analysis was canceled by user.');
       } else if (err instanceof ApiError) {
-        if (err.status === 503) {
+        if (err.status === 401) {
+          setErrorMessage('Your session has expired or authentication is required. Please sign in to analyze your meal.');
+        } else if (err.status === 503) {
           setErrorMessage(err.message || 'The AI vision service is currently experiencing high demand. Please try again in a few moments.');
         } else if (err.status === 504) {
           setErrorMessage('Food analysis timed out. The vision model took too long to respond. Please try again in a few moments.');
@@ -237,7 +165,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     } finally {
       isSubmittingRef.current = false;
       abortControllerRef.current = null;
-      setUploadProgress(null);
     }
   };
 
@@ -247,9 +174,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     }
     setPipelineStage('idle');
     isSubmittingRef.current = false;
-    setUploadProgress(null);
     setLoadingStep('');
-    setStorageNotice(null);
     setErrorMessage('Meal analysis was canceled by user.');
   };
 
@@ -263,10 +188,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     setSelectedFile(null);
     setPreviewUrl(null);
     setErrorMessage(null);
-    setStorageNotice(null);
-    setStorageStatus('idle');
-    setUploadProgress(null);
-    setIsUploaded(false);
     setAnalysisResult(null);
     setPipelineStage('idle');
     isSubmittingRef.current = false;
@@ -356,13 +277,40 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
           Food Image Analysis
         </h2>
         <p className="text-xs sm:text-sm text-slate-400 max-w-lg mx-auto">
-          Photograph your meal. Multimodal AI identifies dishes, estimates portion volume, and surfaces honest visual uncertainty margins.
+          Photograph your meal. Multimodal AI directly identifies dishes, estimates portion volume, and surfaces honest visual uncertainty margins.
         </p>
       </div>
 
       {/* Upload Box */}
       <div className="bg-dark-card rounded-2xl border border-dark-border p-6 sm:p-8 shadow-xl space-y-6">
+        {/* Error / Notice message */}
+        {errorMessage && (
+          <div className="flex items-start justify-between gap-3 p-4 rounded-xl bg-coral-dim border border-coral-primary/30 text-coral-primary text-xs animate-fadeIn">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold block">
+                  {errorMessage.includes('sign in') || errorMessage.includes('register')
+                    ? 'Authentication Required'
+                    : 'Analysis Notice'}
+                </span>
+                <span className="leading-relaxed">{errorMessage}</span>
+              </div>
+            </div>
+            {(errorMessage.includes('sign in') || errorMessage.includes('register')) && onSignInClick && (
+              <button
+                type="button"
+                onClick={onSignInClick}
+                className="px-3 py-1.5 rounded-lg bg-coral-primary text-white font-bold hover:bg-coral-primary/90 transition-colors shrink-0"
+              >
+                Sign In / Register
+              </button>
+            )}
+          </div>
+        )}
+
         {!previewUrl ? (
+
           <div>
             <div
               onDrop={handleDrop}
@@ -480,56 +428,15 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                   <span className="font-medium text-white">{selectedFile.name}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  {isUploaded && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-lime-dim text-lime-primary border border-lime-primary/30">
-                      Cloud Stored
-                    </span>
-                  )}
-                  {storageStatus === 'direct' && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-dark-card text-slate-400 border border-dark-border">
-                      Direct Mode
-                    </span>
-                  )}
-                  {storageStatus === 'fallback' && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-400/10 text-amber-300 border border-amber-400/30">
-                      Local Scan
-                    </span>
-                  )}
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-dark-card text-lime-primary border border-lime-primary/30">
+                    Direct AI Vision
+                  </span>
                   <span>{(selectedFile.size / 1024).toFixed(1)} KB</span>
                 </div>
               </div>
             )}
 
-            {/* Storage notice (only shown when not overshadowed by an analysis failure) */}
-            {storageNotice && !errorMessage && (
-              <div
-                className={`flex items-start gap-2.5 p-3.5 rounded-xl border text-xs animate-fadeIn ${
-                  storageNotice.type === 'success'
-                    ? 'bg-lime-dim border-lime-primary/30 text-lime-primary'
-                    : storageNotice.type === 'warning'
-                    ? 'bg-amber-400/10 border-amber-400/30 text-amber-300'
-                    : 'bg-dark-inner border-dark-border text-slate-300'
-                }`}
-              >
-                {storageNotice.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-lime-primary" />
-                ) : storageNotice.type === 'warning' ? (
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-                ) : (
-                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-lime-primary" />
-                )}
-                <div className="space-y-0.5 min-w-0">
-                  <span className="font-semibold block">
-                    {storageNotice.type === 'success'
-                      ? 'Cloud Storage Connected'
-                      : 'Storage Notice'}
-                  </span>
-                  <span className="leading-relaxed">{storageNotice.message}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Loading Indicator with progress, cancel button & 3-stage breadcrumb */}
+            {/* Loading Indicator with cancel button & 3-stage breadcrumb */}
             {isLoading && (
               <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 space-y-3 animate-fadeIn">
                 <div className="flex items-center justify-between gap-3">
@@ -541,8 +448,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                       </div>
                       <div className="text-[11px] text-lime-primary/90">
                         {pipelineStage === 'validating' && 'Verifying food image resolution and MIME format...'}
-                        {pipelineStage === 'uploading' && 'Saving photo to cloud storage before AI analysis...'}
-                        {pipelineStage === 'analyzing' && 'Multimodal vision AI is identifying visible dishes and calculating grams...'}
+                        {pipelineStage === 'analyzing' && 'Direct multimodal AI is evaluating food items and estimating portion volume...'}
                       </div>
                     </div>
                   </div>
@@ -556,46 +462,21 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
                   </button>
                 </div>
 
-                {uploadProgress !== null && (
-                  <div className="space-y-1">
-                    <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-lime-primary h-full rounded-full transition-all duration-200"
-                        style={{ width: `${uploadProgress}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                      <span>Cloud storage upload</span>
-                      <span>{uploadProgress}%</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Distinct Stage Pipeline Stepper */}
+                {/* 3-Stage Pipeline Stepper */}
                 <div className="grid grid-cols-3 gap-2 pt-2 border-t border-lime-primary/20 text-[10px] font-mono">
-                  <div className={`flex items-center gap-1.5 ${pipelineStage === 'validating' ? 'text-lime-primary font-bold' : 'text-slate-400'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'validating' ? 'bg-lime-primary animate-pulse' : 'bg-slate-500'}`} />
-                    <span>1. Validating</span>
+                  <div className="flex items-center gap-1.5 text-lime-primary font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-lime-primary" />
+                    <span>1. Validating Image</span>
                   </div>
-                  <div className={`flex items-center gap-1.5 ${pipelineStage === 'uploading' ? 'text-lime-primary font-bold' : isUploaded ? 'text-lime-primary' : 'text-slate-400'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'uploading' ? 'bg-lime-primary animate-pulse' : isUploaded ? 'bg-lime-primary' : 'bg-slate-500'}`} />
-                    <span>2. {storageStatus === 'direct' ? 'Direct Mode' : 'Cloud Backup'}</span>
-                  </div>
+
                   <div className={`flex items-center gap-1.5 ${pipelineStage === 'analyzing' ? 'text-lime-primary font-bold' : 'text-slate-400'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'analyzing' ? 'bg-lime-primary animate-pulse' : 'bg-slate-500'}`} />
-                    <span>3. AI Vision</span>
+                    <span>2. Direct AI Vision Analysis</span>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* Error message */}
-            {errorMessage && (
-              <div className="flex items-start gap-2.5 p-4 rounded-xl bg-coral-dim border border-coral-primary/30 text-coral-primary text-xs animate-fadeIn">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <span className="font-bold block">Analysis Notice</span>
-                  <span className="leading-relaxed">{errorMessage}</span>
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                    <span>3. Nutrition Breakdown</span>
+                  </div>
                 </div>
               </div>
             )}
