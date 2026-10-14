@@ -2,33 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Navbar } from './Navbar';
-import { HealthStatus } from '../types';
 
-describe('Navbar Component - Responsive Three-Dot Menu', () => {
-  const healthyStatus: HealthStatus = {
-    status: 'healthy',
-    app: 'nutrilens-backend',
-    version: '1.0.0',
-    database: 'connected',
-    ai_provider: 'gemini',
-    timestamp: '2026-10-12T00:00:00Z',
-  };
-
-  const connectingStatus: HealthStatus = {
-    status: 'degraded',
-    app: 'nutrilens-backend',
-    version: '1.0.0',
-    database: 'connecting',
-    ai_provider: 'gemini',
-    timestamp: '2026-10-12T00:00:00Z',
-  };
-
-  it('1. Renders logo branding, three-dot trigger button, and keeps menu closed by default', () => {
+describe('Navbar Component - Minimal Navigation', () => {
+  it('1. Renders clean NutriLens branding and keeps dropdown menu closed by default', () => {
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="home" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="home" setActiveTab={setActiveTab} />);
 
     expect(screen.getByText('NutriLens')).toBeInTheDocument();
-    expect(screen.getByText('AI Vision')).toBeInTheDocument();
 
     const trigger = screen.getByRole('button', { name: /open navigation menu/i });
     expect(trigger).toBeInTheDocument();
@@ -39,10 +19,10 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
     expect(screen.queryByRole('menu', { name: /navigation options/i })).not.toBeInTheDocument();
   });
 
-  it('2. Opens menu when clicking the three-dot button and displays all 5 navigation options', async () => {
+  it('2. Opens menu when clicking the three-dot button and displays the 4 primary navigation options', async () => {
     const user = userEvent.setup();
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="home" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="home" setActiveTab={setActiveTab} />);
 
     const trigger = screen.getByRole('button', { name: /open navigation menu/i });
     await user.click(trigger);
@@ -50,39 +30,38 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('menu', { name: /navigation options/i })).toBeInTheDocument();
 
-    // Verify all 5 navigation options are present
-    expect(screen.getByRole('menuitem', { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /dashboard/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /scan food/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /profile & goals/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /indian foods/i })).toBeInTheDocument();
+    // Verify all 4 primary navigation options are present in menu
+    expect(screen.getByRole('menuitem', { name: /^home$/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /^scan food$/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /^history$/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /^profile$/i })).toBeInTheDocument();
   });
 
   it('3. Highlights the active section visually in the menu', async () => {
     const user = userEvent.setup();
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="dashboard" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="scan" setActiveTab={setActiveTab} />);
 
     await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
 
-    const dashboardItem = screen.getByRole('menuitem', { name: /dashboard/i });
-    const overviewItem = screen.getByRole('menuitem', { name: /overview/i });
+    const scanItem = screen.getByRole('menuitem', { name: /^scan food$/i });
+    const homeItem = screen.getByRole('menuitem', { name: /^home$/i });
 
-    expect(dashboardItem).toHaveClass('text-lime-primary');
-    expect(dashboardItem).toHaveClass('font-semibold');
-    expect(overviewItem).not.toHaveClass('text-lime-primary');
+    expect(scanItem).toHaveClass('text-lime-primary');
+    expect(scanItem).toHaveClass('font-semibold');
+    expect(homeItem).not.toHaveClass('text-lime-primary');
   });
 
   it('4. Navigates to selected section and closes the menu when an option is clicked', async () => {
     const user = userEvent.setup();
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="home" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="home" setActiveTab={setActiveTab} />);
 
     // Open menu
     await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
 
     // Click 'Scan Food'
-    const scanOption = screen.getByRole('menuitem', { name: /scan food/i });
+    const scanOption = screen.getByRole('menuitem', { name: /^scan food$/i });
     await user.click(scanOption);
 
     expect(setActiveTab).toHaveBeenCalledWith('scan');
@@ -92,7 +71,7 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
   it('5. Toggles menu closed when clicking the three-dot trigger button again', async () => {
     const user = userEvent.setup();
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="home" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="home" setActiveTab={setActiveTab} />);
 
     const trigger = screen.getByRole('button', { name: /open navigation menu/i });
     await user.click(trigger);
@@ -105,7 +84,7 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
   it('6. Closes menu when pressing Escape key and restores focus to trigger button', async () => {
     const user = userEvent.setup();
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="home" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="home" setActiveTab={setActiveTab} />);
 
     const trigger = screen.getByRole('button', { name: /open navigation menu/i });
     await user.click(trigger);
@@ -122,7 +101,7 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
     render(
       <div>
         <div data-testid="outside-area">Outside</div>
-        <Navbar activeTab="home" setActiveTab={setActiveTab} health={healthyStatus} />
+        <Navbar activeTab="home" setActiveTab={setActiveTab} />
       </div>
     );
 
@@ -137,7 +116,7 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
   it('8. Clicking brand logo navigates to home', async () => {
     const user = userEvent.setup();
     const setActiveTab = vi.fn();
-    render(<Navbar activeTab="profile" setActiveTab={setActiveTab} health={healthyStatus} />);
+    render(<Navbar activeTab="profile" setActiveTab={setActiveTab} />);
 
     const brandBtn = screen.getByRole('button', { name: /nutrilens home overview/i });
     await user.click(brandBtn);
@@ -145,13 +124,18 @@ describe('Navbar Component - Responsive Three-Dot Menu', () => {
     expect(setActiveTab).toHaveBeenCalledWith('home');
   });
 
-  it('9. Correctly displays live API connected status when healthy', () => {
-    render(<Navbar activeTab="home" setActiveTab={vi.fn()} health={healthyStatus} />);
-    expect(screen.getByText('Live API Connected')).toBeInTheDocument();
-  });
+  it('9. Desktop navigation bar contains quick navigation buttons', async () => {
+    const user = userEvent.setup();
+    const setActiveTab = vi.fn();
+    render(<Navbar activeTab="home" setActiveTab={setActiveTab} />);
 
-  it('10. Correctly displays connecting API status when degraded or null', () => {
-    render(<Navbar activeTab="home" setActiveTab={vi.fn()} health={connectingStatus} />);
-    expect(screen.getByText('Connecting to API...')).toBeInTheDocument();
+    const mainNav = screen.getByRole('navigation', { name: /main navigation/i });
+    expect(mainNav).toBeInTheDocument();
+
+    // Click direct button in main navigation
+    const historyBtn = screen.getByRole('button', { name: /history/i });
+    await user.click(historyBtn);
+
+    expect(setActiveTab).toHaveBeenCalledWith('history');
   });
 });
