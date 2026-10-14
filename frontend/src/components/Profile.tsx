@@ -15,6 +15,12 @@ import {
   ArrowLeft,
   Mail,
   Lock,
+  Calendar,
+  TrendingDown,
+  TrendingUp,
+  Trash2,
+  Edit3,
+  Plus,
 } from 'lucide-react';
 import { api, ApiError } from '../services/api';
 import {
@@ -24,7 +30,10 @@ import {
   ActivityLevel,
   UserGoal,
   User as UserType,
+  WeightEntry,
+  WeightHistoryResponse,
 } from '../types';
+
 import {
   signInWithGoogle,
   signInWithFirebaseEmail,
@@ -69,7 +78,27 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
     weight_kg?: string;
   }>({});
 
+  // Weight History state
+  const [weightHistory, setWeightHistory] = useState<WeightHistoryResponse | null>(null);
+  const [newWeightStr, setNewWeightStr] = useState<string>('');
+  const [newWeightDate, setNewWeightDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+  const [newWeightNotes, setNewWeightNotes] = useState<string>('');
+  const [weightLoading, setWeightLoading] = useState(false);
+  const [weightMessage, setWeightMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  // Editing state for an individual weight entry
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editWeightStr, setEditWeightStr] = useState<string>('');
+  const [editWeightDate, setEditWeightDate] = useState<string>('');
+  const [editWeightNotes, setEditWeightNotes] = useState<string>('');
+
   // Auth Modal State
+
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<
     'login' | 'register' | 'forgot-password' | 'reset-password' | 'link-account'
@@ -118,10 +147,21 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
       if (api.getToken()) {
         const user = await api.getMe();
         setCurrentUser(user);
+
+        if (typeof api.getWeightHistory === 'function') {
+          api.getWeightHistory().then((wRes) => {
+            setWeightHistory(wRes);
+            if (wRes && wRes.latest && !isDirtyRef.current) {
+              setWeightStr(String(wRes.latest.weight_kg));
+            }
+          }).catch(() => {});
+        }
+
         try {
           const profData = await api.getProfile();
           // Only sync from server if user hasn't started modifying fields locally
           if (!isDirtyRef.current) {
+
             setProfile(profData.profile);
             setAgeStr(String(profData.profile.age));
             setHeightStr(String(profData.profile.height_cm));
@@ -469,6 +509,9 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
       setTargets(res.targets);
       setSaveSuccess(true);
       isDirtyRef.current = false;
+      if (typeof api.getWeightHistory === 'function') {
+        api.getWeightHistory().then(setWeightHistory).catch(() => {});
+      }
       if (onProfileUpdated) onProfileUpdated();
     } catch (err: any) {
       // Preserve user-entered values in state while displaying error
@@ -478,7 +521,111 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
     }
   };
 
+  const handleRecordNewWeight = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWeightMessage(null);
+    const parsedWeight = parseFloat(newWeightStr);
+    if (isNaN(parsedWeight) || parsedWeight < 20 || parsedWeight > 400) {
+      setWeightMessage({ type: 'error', text: 'Weight must be between 20 and 400 kg.' });
+      return;
+    }
+    if (!newWeightDate) {
+      setWeightMessage({ type: 'error', text: 'Please select a date for the measurement.' });
+      return;
+    }
+
+    if (!api.getToken()) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    setWeightLoading(true);
+    try {
+      await api.recordWeight(parsedWeight, newWeightDate, newWeightNotes.trim() || undefined);
+      if (typeof api.getWeightHistory === 'function') {
+        const updatedHistory = await api.getWeightHistory();
+        setWeightHistory(updatedHistory);
+        if (updatedHistory.latest) {
+          setWeightStr(String(updatedHistory.latest.weight_kg));
+        }
+      }
+      setNewWeightStr('');
+      setNewWeightNotes('');
+      setWeightMessage({
+        type: 'success',
+        text: `Recorded weight of ${parsedWeight} kg for ${newWeightDate}!`,
+      });
+      if (onProfileUpdated) onProfileUpdated();
+    } catch (err: any) {
+      setWeightMessage({ type: 'error', text: err.message || 'Failed to record weight entry.' });
+    } finally {
+      setWeightLoading(false);
+    }
+  };
+
+  const handleStartEditEntry = (entry: WeightEntry) => {
+    setEditingEntryId(entry.id);
+    setEditWeightStr(String(entry.weight_kg));
+    setEditWeightDate(entry.date);
+    setEditWeightNotes(entry.notes || '');
+  };
+
+  const handleSaveEditEntry = async (entryId: string) => {
+    setWeightMessage(null);
+    const parsedWeight = parseFloat(editWeightStr);
+    if (isNaN(parsedWeight) || parsedWeight < 20 || parsedWeight > 400) {
+      setWeightMessage({ type: 'error', text: 'Weight must be between 20 and 400 kg.' });
+      return;
+    }
+
+    setWeightLoading(true);
+    try {
+      await api.updateWeightEntry(entryId, {
+        weight_kg: parsedWeight,
+        date: editWeightDate,
+        notes: editWeightNotes.trim() || undefined,
+      });
+      if (typeof api.getWeightHistory === 'function') {
+        const updatedHistory = await api.getWeightHistory();
+        setWeightHistory(updatedHistory);
+        if (updatedHistory.latest) {
+          setWeightStr(String(updatedHistory.latest.weight_kg));
+        }
+      }
+      setEditingEntryId(null);
+      setWeightMessage({ type: 'success', text: 'Weight entry updated successfully.' });
+      if (onProfileUpdated) onProfileUpdated();
+    } catch (err: any) {
+      setWeightMessage({ type: 'error', text: err.message || 'Failed to update weight entry.' });
+    } finally {
+      setWeightLoading(false);
+    }
+  };
+
+  const handleDeleteEntry = async (entryId: string) => {
+    if (!window.confirm('Are you sure you want to delete this weight measurement?')) return;
+    setWeightMessage(null);
+    setWeightLoading(true);
+    try {
+      await api.deleteWeightEntry(entryId);
+      if (typeof api.getWeightHistory === 'function') {
+        const updatedHistory = await api.getWeightHistory();
+        setWeightHistory(updatedHistory);
+        if (updatedHistory.latest) {
+          setWeightStr(String(updatedHistory.latest.weight_kg));
+        }
+      }
+      setWeightMessage({ type: 'success', text: 'Weight entry deleted.' });
+      if (onProfileUpdated) onProfileUpdated();
+    } catch (err: any) {
+      setWeightMessage({ type: 'error', text: err.message || 'Failed to delete weight entry.' });
+    } finally {
+      setWeightLoading(false);
+    }
+  };
+
   const handleAuthSubmit = async (e: React.FormEvent) => {
+
     e.preventDefault();
     setAuthError(null);
     setLoading(true);
@@ -1201,6 +1348,288 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
           )}
         </div>
       </div>
+
+      {/* Body Weight Tracking & History Section */}
+      <section
+        aria-labelledby="body-measurements-heading"
+        className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl space-y-6"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-dark-border">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
+                Body Measurements
+              </span>
+              {weightHistory?.trend && (
+                <span
+                  className={`text-[11px] px-2.5 py-0.5 rounded-full border flex items-center gap-1 font-semibold ${
+                    weightHistory.trend === 'DECREASING'
+                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                      : weightHistory.trend === 'INCREASING'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      : 'bg-slate-500/10 text-slate-300 border-slate-500/30'
+                  }`}
+                >
+                  {weightHistory.trend === 'DECREASING' && <TrendingDown className="w-3 h-3" />}
+                  {weightHistory.trend === 'INCREASING' && <TrendingUp className="w-3 h-3" />}
+                  {weightHistory.trend}{' '}
+                  {weightHistory.change_kg !== null && weightHistory.change_kg !== undefined
+                    ? `(${weightHistory.change_kg > 0 ? '+' : ''}${weightHistory.change_kg} kg)`
+                    : ''}
+                </span>
+              )}
+            </div>
+            <h2 id="body-measurements-heading" className="text-lg font-bold text-white">
+              Body Measurements & Progress Log
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Record your weight with date to track changes over time. The latest entry automatically syncs your daily targets.
+            </p>
+          </div>
+
+          {/* Latest Weight Summary */}
+          {weightHistory?.latest && (
+            <div className="p-3 bg-dark-inner border border-dark-border rounded-xl text-right self-start sm:self-auto shrink-0">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                Latest Recorded Weight
+              </span>
+              <span className="text-xl font-black text-white">
+                {weightHistory.latest.weight_kg}{' '}
+                <span className="text-xs font-normal text-slate-400">kg</span>
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">
+                on {weightHistory.latest.date}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Log New Weight Form */}
+        {currentUser ? (
+          <form
+            onSubmit={handleRecordNewWeight}
+            className="bg-dark-inner/60 p-4 rounded-xl border border-dark-border space-y-3"
+          >
+            <span className="text-xs font-bold text-white block">Log a Weight Measurement</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label
+                  htmlFor="log-weight-date"
+                  className="block text-[11px] font-semibold text-slate-400 mb-1"
+                >
+                  Date
+                </label>
+                <input
+                  id="log-weight-date"
+                  type="date"
+                  max={new Date().toISOString().split('T')[0]}
+                  value={newWeightDate}
+                  onChange={(e) => setNewWeightDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-xs text-white focus:outline-none focus:border-lime-primary"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="log-weight-val"
+                  className="block text-[11px] font-semibold text-slate-400 mb-1"
+                >
+                  Weigh-in Value (kg)
+                </label>
+                <input
+                  id="log-weight-val"
+                  type="number"
+                  step="0.1"
+                  min="20"
+                  max="400"
+                  placeholder="e.g. 74.5"
+                  value={newWeightStr}
+                  onChange={(e) => setNewWeightStr(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-xs text-white focus:outline-none focus:border-lime-primary"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="log-weight-notes"
+                  className="block text-[11px] font-semibold text-slate-400 mb-1"
+                >
+                  Notes (optional)
+                </label>
+                <input
+                  id="log-weight-notes"
+                  type="text"
+                  placeholder="e.g. Fasted morning"
+                  value={newWeightNotes}
+                  onChange={(e) => setNewWeightNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-xs text-white focus:outline-none focus:border-lime-primary"
+                />
+              </div>
+            </div>
+
+            {weightMessage && (
+              <div
+                className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                  weightMessage.type === 'success'
+                    ? 'bg-lime-dim border border-lime-primary/30 text-lime-primary'
+                    : 'bg-coral-dim border border-coral-primary/30 text-coral-primary'
+                }`}
+              >
+                {weightMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{weightMessage.text}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="submit"
+                disabled={weightLoading}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-lime-primary hover:bg-lime-hover disabled:opacity-50 text-lime-dark text-xs font-bold rounded-lg transition-colors shadow-sm"
+              >
+                {weightLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
+                <span>Record Weight</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="p-4 rounded-xl bg-dark-inner border border-dark-border text-xs text-slate-300 flex items-center justify-between">
+            <span>Sign in to log and monitor your body weight measurements over time.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('login');
+                setShowAuthModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-lime-primary text-lime-dark font-bold text-xs hover:bg-lime-hover transition-colors"
+            >
+              Sign In
+            </button>
+          </div>
+        )}
+
+        {/* Historical Weight Entries List */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Recorded Measurements ({weightHistory?.entries?.length || 0})
+            </span>
+          </div>
+
+          {weightHistory && weightHistory.entries && weightHistory.entries.length > 0 ? (
+            <div className="divide-y divide-dark-border/60 border border-dark-border rounded-xl bg-dark-inner/40 overflow-hidden text-xs">
+              {weightHistory.entries.map((entry) => {
+                const isEditing = editingEntryId === entry.id;
+                return (
+                  <div
+                    key={entry.id}
+                    className="p-3 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-dark-inner/80 transition-colors"
+                  >
+                    {isEditing ? (
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input
+                          type="date"
+                          value={editWeightDate}
+                          onChange={(e) => setEditWeightDate(e.target.value)}
+                          className="px-2 py-1.5 bg-dark-card border border-dark-border rounded text-xs text-white"
+                        />
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={editWeightStr}
+                          onChange={(e) => setEditWeightStr(e.target.value)}
+                          className="px-2 py-1.5 bg-dark-card border border-dark-border rounded text-xs text-white"
+                        />
+                        <input
+                          type="text"
+                          value={editWeightNotes}
+                          placeholder="Notes"
+                          onChange={(e) => setEditWeightNotes(e.target.value)}
+                          className="px-2 py-1.5 bg-dark-card border border-dark-border rounded text-xs text-white"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="flex items-center gap-1.5 text-slate-400 shrink-0 font-mono">
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{entry.date}</span>
+                        </div>
+                        <span className="font-bold text-white text-sm">
+                          {entry.weight_kg}{' '}
+                          <span className="text-xs font-normal text-slate-400">kg</span>
+                        </span>
+                        {entry.notes && (
+                          <span className="text-slate-400 truncate italic">— {entry.notes}</span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={weightLoading}
+                            onClick={() => handleSaveEditEntry(entry.id)}
+                            className="px-2.5 py-1 rounded bg-lime-primary text-lime-dark font-bold text-[11px] hover:bg-lime-hover"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingEntryId(null)}
+                            className="px-2 py-1 rounded bg-dark-card text-slate-300 hover:text-white text-[11px]"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditEntry(entry)}
+                            className="p-1.5 rounded hover:bg-dark-card text-slate-400 hover:text-white transition-colors"
+                            aria-label={`Edit measurement from ${entry.date}`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={weightLoading}
+                            onClick={() => handleDeleteEntry(entry.id)}
+                            className="p-1.5 rounded hover:bg-dark-card text-slate-400 hover:text-coral-primary transition-colors"
+                            aria-label={`Delete measurement from ${entry.date}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-8 rounded-xl bg-dark-inner/40 border border-dark-border text-center space-y-1">
+              <p className="text-xs text-slate-400">
+                No historical weight measurements recorded yet.
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Log your weight above to start tracking changes over time.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Auth Modal */}
       {showAuthModal && (

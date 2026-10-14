@@ -445,4 +445,23 @@ export interface MealOptimizationResponse {
   recommendations: OptimizationRecommendation[];
 }
 
+export interface WeightEntry {
+  id: string;
+  user_id: string;
+  weight_kg: number;
+  date: string;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WeightHistoryResponse {
+  entries: WeightEntry[];
+  total: number;
+  latest?: WeightEntry | null;
+  change_kg?: number | null;
+  trend?: 'DECREASING' | 'INCREASING' | 'STABLE' | null;
+}
+
+
 

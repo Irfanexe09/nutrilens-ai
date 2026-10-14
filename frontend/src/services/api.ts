@@ -15,7 +15,10 @@ import {
   CandidateItem,
   WeeklyAnalyticsResponse,
   MealFilterParams,
+  WeightEntry,
+  WeightHistoryResponse,
 } from '../types';
+
 
 // Base API URL configuration.
 // Defaults to relative '/api' which is proxied by Nginx in Docker or Vite in local development.
@@ -384,4 +387,68 @@ export const api = {
     });
     return handleResponse<Meal>(res);
   },
+
+  // Weight Tracking
+  async recordWeight(weightKg: number, date: string, notes?: string): Promise<WeightEntry> {
+    const res = await fetch(`${API_BASE}/weight`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader(),
+      },
+      body: JSON.stringify({ weight_kg: weightKg, date, notes }),
+    });
+    return handleResponse<WeightEntry>(res);
+  },
+
+  async getWeightHistory(
+    startDate?: string,
+    endDate?: string,
+    limit: number = 50,
+    skip: number = 0
+  ): Promise<WeightHistoryResponse> {
+    const params = new URLSearchParams();
+    params.append('skip', skip.toString());
+    params.append('limit', limit.toString());
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+
+    const res = await fetch(`${API_BASE}/weight?${params.toString()}`, {
+      headers: { ...getAuthHeader() },
+    });
+    return handleResponse<WeightHistoryResponse>(res);
+  },
+
+  async getWeightEntry(id: string): Promise<WeightEntry> {
+    const res = await fetch(`${API_BASE}/weight/${id}`, {
+      headers: { ...getAuthHeader() },
+    });
+    return handleResponse<WeightEntry>(res);
+  },
+
+  async updateWeightEntry(
+    id: string,
+    data: { weight_kg?: number; date?: string; notes?: string }
+  ): Promise<WeightEntry> {
+    const res = await fetch(`${API_BASE}/weight/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader(),
+      },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<WeightEntry>(res);
+  },
+
+  async deleteWeightEntry(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/weight/${id}`, {
+      method: 'DELETE',
+      headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) {
+      throw new ApiError('Failed to delete weight entry', res.status);
+    }
+  },
 };
+

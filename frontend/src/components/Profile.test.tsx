@@ -282,4 +282,71 @@ describe('Profile Component - Biometric Inputs & Target Calculations', () => {
     expect(screen.getByLabelText(/height/i)).toHaveValue('185');
     expect(screen.getByLabelText(/weight/i)).toHaveValue('84');
   });
+
+  it('11. Renders recorded weight history entries when available', async () => {
+    vi.spyOn(api, 'getToken').mockReturnValue('valid-token');
+    vi.spyOn(api, 'getMe').mockResolvedValue({ id: 'user-123', email: 'test@nutrilens.ai' });
+    vi.spyOn(api, 'getProfile').mockResolvedValue(mockProfileData);
+    vi.spyOn(api, 'getWeightHistory').mockResolvedValue({
+      entries: [
+        {
+          id: 'w-1',
+          user_id: 'user-123',
+          weight_kg: 72.5,
+          date: '2026-10-12',
+          notes: 'Fasted morning',
+        },
+      ],
+      total: 1,
+      latest: {
+        id: 'w-1',
+        user_id: 'user-123',
+        weight_kg: 72.5,
+        date: '2026-10-12',
+        notes: 'Fasted morning',
+      },
+      change_kg: 0,
+      trend: 'STABLE',
+    });
+
+    render(<Profile />);
+
+    expect(await screen.findByText(/Body Measurements & Progress Log/i)).toBeInTheDocument();
+    expect(screen.getAllByText('72.5').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2026-10-12/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Fasted morning/)).toBeInTheDocument();
+
+  });
+
+  it('12. Submitting new weigh-in calls api.recordWeight and updates entries', async () => {
+    vi.spyOn(api, 'getToken').mockReturnValue('valid-token');
+    vi.spyOn(api, 'getMe').mockResolvedValue({ id: 'user-123', email: 'test@nutrilens.ai' });
+    vi.spyOn(api, 'getProfile').mockResolvedValue(mockProfileData);
+    const mockRecord = vi.spyOn(api, 'recordWeight').mockResolvedValue({
+      id: 'w-2',
+      user_id: 'user-123',
+      weight_kg: 71.0,
+      date: '2026-10-14',
+    });
+    vi.spyOn(api, 'getWeightHistory').mockResolvedValue({
+      entries: [],
+      total: 0,
+    });
+
+    const user = userEvent.setup();
+    render(<Profile />);
+
+    expect(await screen.findByText(/Body Measurements & Progress Log/i)).toBeInTheDocument();
+
+    const weightInput = screen.getByLabelText(/Weigh-in Value/i);
+    await user.type(weightInput, '71.0');
+
+    const submitBtn = screen.getByRole('button', { name: /Record Weight/i });
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(mockRecord).toHaveBeenCalledWith(71.0, expect.any(String), undefined);
+    });
+  });
 });
+
