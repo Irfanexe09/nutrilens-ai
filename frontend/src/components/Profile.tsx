@@ -816,10 +816,10 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
             )}
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Personal Profile & Daily Nutrition Targets
+            Your Profile & Targets
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Deterministic energy and macronutrient targets computed via Mifflin-St Jeor equation.
+            Set your measurements and goal to calculate your daily nutrition targets.
           </p>
         </div>
 
@@ -854,7 +854,7 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <User className="w-4 h-4 text-lime-primary" />
-              Biometric Metrics & Goal
+              Personal Details & Goal
             </h2>
             <span className="text-[11px] text-slate-400 font-mono">Metric Units</span>
           </div>
@@ -1051,7 +1051,7 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                   <div className="flex items-center gap-2">
                     <Flame className="w-5 h-5 text-lime-primary" />
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Calculated Daily Intake Budget
+                      Daily Calorie Target
                     </span>
                   </div>
                   <span className="text-[11px] font-semibold text-lime-primary bg-lime-dim px-2.5 py-0.5 rounded-full border border-lime-primary/20">
@@ -1070,7 +1070,7 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dark-border">
                   <div className="bg-dark-inner/80 p-3.5 rounded-xl border border-dark-border">
                     <span className="text-[11px] text-slate-400 block mb-0.5 font-medium">
-                      BMR (Basal Metabolic Rate)
+                      Resting Energy (BMR)
                     </span>
                     <span className="text-lg font-bold text-slate-200">
                       {targets.bmr} <span className="text-xs font-normal text-slate-400">kcal</span>
@@ -1080,7 +1080,7 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
 
                   <div className="bg-dark-inner/80 p-3.5 rounded-xl border border-dark-border">
                     <span className="text-[11px] text-slate-400 block mb-0.5 font-medium">
-                      TDEE (Total Daily Energy)
+                      Energy with Activity (TDEE)
                     </span>
                     <span className="text-lg font-bold text-slate-200">
                       {targets.tdee} <span className="text-xs font-normal text-slate-400">kcal</span>
@@ -1096,7 +1096,6 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                 <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-sky-400/30 transition-colors">
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="font-semibold text-sky-400">Protein</span>
-                    <span className="text-[10px] text-slate-500 font-mono">4 kcal/g</span>
                   </div>
                   <div className="text-2xl font-bold text-white mb-2">
                     {targets.protein_target_g}
@@ -1119,7 +1118,6 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                 <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-amber-400/30 transition-colors">
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="font-semibold text-amber-400">Carbs</span>
-                    <span className="text-[10px] text-slate-500 font-mono">4 kcal/g</span>
                   </div>
                   <div className="text-2xl font-bold text-white mb-2">
                     {targets.carbohydrates_target_g}
@@ -1142,7 +1140,6 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                 <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-rose-400/30 transition-colors">
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="font-semibold text-rose-400">Fat</span>
-                    <span className="text-[10px] text-slate-500 font-mono">9 kcal/g</span>
                   </div>
                   <div className="text-2xl font-bold text-white mb-2">
                     {targets.fat_target_g}
@@ -1165,7 +1162,6 @@ export const Profile: React.FC<ProfileProps> = ({ onProfileUpdated }) => {
                 <div className="bg-dark-card rounded-xl border border-dark-border p-4 shadow-sm hover:border-lime-primary/30 transition-colors">
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="font-semibold text-lime-primary">Fiber</span>
-                    <span className="text-[10px] text-slate-500 font-mono">Floor</span>
                   </div>
                   <div className="text-2xl font-bold text-white mb-2">
                     {targets.fiber_target_g}
