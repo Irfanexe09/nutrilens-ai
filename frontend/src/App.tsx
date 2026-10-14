@@ -179,6 +179,7 @@ export const App: React.FC = () => {
           <Dashboard
             onLogMealClick={() => setActiveTab('scan')}
             onConfigureProfileClick={() => setActiveTab('profile')}
+            onViewHistoryClick={() => setActiveTab('history')}
           />
         )}
 

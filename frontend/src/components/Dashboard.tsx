@@ -1,30 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Camera,
   ChevronLeft,
   ChevronRight,
   Loader2,
   Clock,
+  User,
+  ArrowRight,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
-import { DailyNutritionResponse, DailyMealItem } from '../types';
+import {
+  DailyNutritionResponse,
+  DailyMealItem,
+  UserProfile,
+  WeeklyAnalyticsResponse,
+} from '../types';
 import { MealDetailModal } from './MealDetailModal';
 
 interface DashboardProps {
   onLogMealClick: () => void;
   onConfigureProfileClick: () => void;
+  onViewHistoryClick?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
   onLogMealClick,
   onConfigureProfileClick,
+  onViewHistoryClick,
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [dailyData, setDailyData] = useState<DailyNutritionResponse | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [recentAnalytics, setRecentAnalytics] = useState<WeeklyAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMealDetail, setSelectedMealDetail] = useState<DailyMealItem | null>(null);
+
+  // Request counter to discard stale out-of-order API responses
+  const activeReqIdRef = useRef(0);
 
   const isAuthenticated = Boolean(api.getToken());
 
@@ -37,63 +53,101 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   useEffect(() => {
-    loadDailyMetrics();
+    loadDashboardData(selectedDate);
   }, [selectedDate]);
 
-  const loadDailyMetrics = async () => {
+  const loadDashboardData = async (dateToLoad: string) => {
+    const reqId = ++activeReqIdRef.current;
     setLoading(true);
     setError(null);
+
     try {
       if (api.getToken()) {
-        const res = await api.getDailyNutrition(selectedDate);
-        setDailyData(res);
+        // Fetch daily nutrition for selected date
+        const nutritionPromise = api.getDailyNutrition(dateToLoad);
+
+        // Fetch profile once if not yet loaded
+        const profilePromise = userProfile
+          ? Promise.resolve({ profile: userProfile })
+          : api.getProfile().catch(() => null);
+
+        // Fetch recent analytics for past days overview
+        const analyticsPromise = recentAnalytics
+          ? Promise.resolve(recentAnalytics)
+          : api.getWeeklyAnalytics(undefined, 7).catch(() => null);
+
+        const [nutRes, profRes, analRes] = await Promise.all([
+          nutritionPromise,
+          profilePromise,
+          analyticsPromise,
+        ]);
+
+        // Guard against race conditions: only update if this is still the active request
+        if (reqId === activeReqIdRef.current) {
+          setDailyData(nutRes);
+          if (profRes && 'profile' in profRes && profRes.profile) {
+            setUserProfile(profRes.profile);
+          }
+          if (analRes) {
+            setRecentAnalytics(analRes);
+          }
+        }
       } else {
-        // Unauthenticated preview with default 2000 kcal target without polluting backend DB
-        setDailyData({
-          date: selectedDate,
-          target: {
-            calorie_target: 2000,
-            protein_target_g: 125,
-            carbohydrates_target_g: 225,
-            fat_target_g: 65,
-            fiber_target_g: 28,
-            has_custom_target: false,
-            disclaimer: 'Default target for demonstration.',
-          },
-          consumed: {
-            calories: 0,
-            protein_g: 0,
-            carbohydrates_g: 0,
-            fat_g: 0,
-            fiber_g: 0,
-          },
-          remaining: {
-            calories: 2000,
-            protein_g: 125,
-            carbohydrates_g: 225,
-            fat_g: 65,
-            fiber_g: 28,
-          },
-          overage: {
-            calories: 0,
-            is_over_target: false,
-            status_message: 'On track',
-          },
-          percentages: {
-            calories: 0,
-            protein: 0,
-            carbohydrates: 0,
-            fat: 0,
-            fiber: 0,
-          },
-          meal_count: 0,
-          meals: [],
-        });
+        // Unauthenticated demo state with honest defaults
+        if (reqId === activeReqIdRef.current) {
+          setUserProfile(null);
+          setDailyData({
+            date: dateToLoad,
+            target: {
+              calorie_target: 2000,
+              protein_target_g: 125,
+              carbohydrates_target_g: 225,
+              fat_target_g: 65,
+              fiber_target_g: 28,
+              has_custom_target: false,
+              disclaimer: 'Default target for demonstration.',
+            },
+            consumed: {
+              calories: 0,
+              protein_g: 0,
+              carbohydrates_g: 0,
+              fat_g: 0,
+              fiber_g: 0,
+            },
+            remaining: {
+              calories: 2000,
+              protein_g: 125,
+              carbohydrates_g: 225,
+              fat_g: 65,
+              fiber_g: 28,
+            },
+            overage: {
+              calories: 0,
+              is_over_target: false,
+              status_message: 'On track',
+            },
+            percentages: {
+              calories: 0,
+              protein: 0,
+              carbohydrates: 0,
+              fat: 0,
+              fiber: 0,
+            },
+            meal_count: 0,
+            meals: [],
+          });
+        }
       }
     } catch (err: any) {
-      setError(err?.message || 'Could not load nutrition data. Please check your connection.');
+      if (reqId === activeReqIdRef.current) {
+        setError(
+          err?.message || 'Could not load nutrition data. Please check your network connection.'
+        );
+      }
     } finally {
-      setLoading(false);
+      if (reqId === activeReqIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -115,11 +169,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const consumedProtein = Math.round(dailyData?.consumed.protein_g || 0);
   const targetProtein = Math.round(dailyData?.target.protein_target_g || 125);
-  const proteinPercent = Math.min(100, Math.round((consumedProtein / Math.max(1, targetProtein)) * 100));
+  const proteinPercent = Math.min(
+    100,
+    Math.round((consumedProtein / Math.max(1, targetProtein)) * 100)
+  );
 
   const consumedCarbs = Math.round(dailyData?.consumed.carbohydrates_g || 0);
   const targetCarbs = Math.round(dailyData?.target.carbohydrates_target_g || 225);
-  const carbsPercent = Math.min(100, Math.round((consumedCarbs / Math.max(1, targetCarbs)) * 100));
+  const carbsPercent = Math.min(
+    100,
+    Math.round((consumedCarbs / Math.max(1, targetCarbs)) * 100)
+  );
 
   const consumedFat = Math.round(dailyData?.consumed.fat_g || 0);
   const targetFat = Math.round(dailyData?.target.fat_target_g || 65);
@@ -134,9 +194,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             {getGreeting()}
+            {userProfile?.name ? `, ${userProfile.name.split(' ')[0]}` : ''}
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-            What have you eaten today?
+            {isToday ? "Here is your nutrition overview for today." : `Viewing records for ${selectedDate}`}
           </p>
         </div>
 
@@ -165,7 +226,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Guest Notice (Gentle, Non-Intrusive) */}
+      {/* Guest Notice */}
       {!isAuthenticated && (
         <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-dark-card border border-dark-border text-xs text-slate-300">
           <span>Set up your profile to personalize your calorie and protein targets.</span>
@@ -187,21 +248,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {/* Error state */}
+      {/* Error state with Retry action */}
       {error && !loading && (
-        <div className="p-4 rounded-xl bg-coral-dim border border-coral-primary/30 text-coral-primary text-xs">
-          {error}
+        <div className="p-4 rounded-xl bg-coral-dim border border-coral-primary/30 text-coral-primary text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadDashboardData(selectedDate)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-coral-primary/20 hover:bg-coral-primary/30 text-coral-primary font-semibold text-xs transition-colors shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Try Again</span>
+          </button>
         </div>
       )}
 
-      {!loading && (
+      {!loading && !error && (
         <>
-          {/* Section B: Today's Nutrition Progress */}
-          <section aria-labelledby="todays-nutrition-heading" className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-sm space-y-6">
+          {/* ========================================================= */}
+          {/* 1. TODAY'S NUTRITION PROGRESS                             */}
+          {/* ========================================================= */}
+          <section
+            aria-labelledby="todays-nutrition-heading"
+            className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-sm space-y-6"
+          >
             <div className="flex items-start justify-between">
               <div>
-                <span id="todays-nutrition-heading" className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
-                  Today's Calories
+                <span
+                  id="todays-nutrition-heading"
+                  className="text-xs font-semibold text-slate-400 uppercase tracking-wider block"
+                >
+                  {isToday ? "Today's Calories" : "Calories Consumed"}
                 </span>
                 <div className="text-3xl sm:text-4xl font-extrabold text-white mt-1">
                   {consumedCalories}{' '}
@@ -288,23 +368,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </section>
 
-          {/* Section C: Primary Quick Action */}
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={onLogMealClick}
-              className="w-full py-3.5 px-6 rounded-xl bg-lime-primary text-lime-dark font-extrabold text-sm hover:bg-lime-hover active:scale-[0.99] transition-all flex items-center justify-center gap-2.5 shadow-md shadow-lime-primary/10"
-            >
-              <Camera className="w-4 h-4" />
-              <span>Scan your food</span>
-            </button>
-          </div>
-
-          {/* Section D: Today's Meals */}
+          {/* ========================================================= */}
+          {/* 2. TODAY'S MEALS                                          */}
+          {/* ========================================================= */}
           <section aria-labelledby="todays-meals-heading" className="space-y-3 pt-2">
             <div className="flex items-center justify-between">
               <h2 id="todays-meals-heading" className="text-base font-bold text-white">
-                Today's Meals
+                {isToday ? "Today's Meals" : `Meals on ${selectedDate}`}
               </h2>
               {meals.length > 0 && (
                 <span className="text-xs text-slate-400 font-medium">
@@ -322,7 +392,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div className="space-y-1">
                   <h3 className="text-base font-bold text-white">Your day starts here.</h3>
                   <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                    Scan your first meal to track your nutrition.
+                    Take or upload a food photo to track your nutrition.
                   </p>
                 </div>
                 <button
@@ -342,7 +412,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     key={meal.id}
                     type="button"
                     onClick={() => setSelectedMealDetail(meal)}
-                    className="w-full text-left p-3.5 rounded-xl bg-dark-card border border-dark-border hover:border-lime-primary/30 transition-all flex items-center justify-between gap-3 group"
+                    className="w-full text-left p-3.5 rounded-xl bg-dark-card border border-dark-border hover:border-lime-primary/30 transition-all flex items-center justify-between gap-3 group cursor-pointer"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {meal.image_url ? (
@@ -388,7 +458,158 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   </button>
                 ))}
+
+                {/* Scan another meal CTA */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={onLogMealClick}
+                    className="w-full py-2.5 px-4 rounded-xl border border-dashed border-dark-border hover:border-lime-primary/40 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-lime-primary" />
+                    <span>Scan or add another meal</span>
+                  </button>
+                </div>
               </div>
+            )}
+          </section>
+
+          {/* ========================================================= */}
+          {/* 3. PERSONAL HEALTH SUMMARY                                */}
+          {/* ========================================================= */}
+          <section
+            aria-labelledby="personal-summary-heading"
+            className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-sm space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-lime-primary" />
+                <h2 id="personal-summary-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Personal Health Summary
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={onConfigureProfileClick}
+                className="text-xs font-semibold text-lime-primary hover:text-lime-hover transition-colors"
+              >
+                {userProfile ? 'Edit Profile' : 'Set Up Profile'}
+              </button>
+            </div>
+
+            {userProfile ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Weight */}
+                <div className="p-3 rounded-xl bg-dark-inner border border-dark-border">
+                  <span className="text-[11px] text-slate-400 block font-medium">Weight</span>
+                  <div className="text-lg font-bold text-white mt-0.5">
+                    {userProfile.weight_kg}{' '}
+                    <span className="text-xs font-normal text-slate-400">kg</span>
+                  </div>
+                </div>
+
+                {/* Height */}
+                <div className="p-3 rounded-xl bg-dark-inner border border-dark-border">
+                  <span className="text-[11px] text-slate-400 block font-medium">Height</span>
+                  <div className="text-lg font-bold text-white mt-0.5">
+                    {userProfile.height_cm}{' '}
+                    <span className="text-xs font-normal text-slate-400">cm</span>
+                  </div>
+                </div>
+
+                {/* Age */}
+                <div className="p-3 rounded-xl bg-dark-inner border border-dark-border">
+                  <span className="text-[11px] text-slate-400 block font-medium">Age</span>
+                  <div className="text-lg font-bold text-white mt-0.5">
+                    {userProfile.age}{' '}
+                    <span className="text-xs font-normal text-slate-400">yrs</span>
+                  </div>
+                </div>
+
+                {/* Daily Calorie Target */}
+                <div className="p-3 rounded-xl bg-dark-inner border border-dark-border">
+                  <span className="text-[11px] text-slate-400 block font-medium">Daily Target</span>
+                  <div className="text-lg font-bold text-lime-primary mt-0.5">
+                    {Math.round(targetCalories)}{' '}
+                    <span className="text-xs font-normal text-slate-400">kcal</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-dark-inner border border-dark-border text-xs text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p>
+                  Complete your profile to personalize your daily calorie and macronutrient targets based on your body measurements.
+                </p>
+                <button
+                  type="button"
+                  onClick={onConfigureProfileClick}
+                  className="px-3.5 py-1.5 rounded-lg bg-lime-primary text-lime-dark font-bold text-xs hover:bg-lime-hover transition-colors shrink-0"
+                >
+                  Complete Profile
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* ========================================================= */}
+          {/* 4. RECENT PROGRESS                                        */}
+          {/* ========================================================= */}
+          <section
+            aria-labelledby="recent-progress-heading"
+            className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-sm space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <h2 id="recent-progress-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Recent Progress
+              </h2>
+              {onViewHistoryClick && (
+                <button
+                  type="button"
+                  onClick={onViewHistoryClick}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-lime-primary hover:text-lime-hover transition-colors"
+                >
+                  <span>View History</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {recentAnalytics && recentAnalytics.days && recentAnalytics.days.some((d) => d.has_logs) ? (
+              <div className="grid grid-cols-7 gap-2 pt-2 items-end h-24">
+                {recentAnalytics.days.map((day, idx) => {
+                  const target = day.calorie_target || targetCalories;
+                  const cals = day.calories || 0;
+                  const barHeight = Math.min(100, Math.round((cals / target) * 100));
+                  const isOver = cals > target;
+
+                  return (
+                    <div key={idx} className="flex flex-col items-center h-full justify-end gap-1">
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {cals > 0 ? Math.round(cals) : ''}
+                      </span>
+                      <div className="w-full bg-dark-inner rounded-t-lg h-14 flex items-end overflow-hidden p-0.5">
+                        <div
+                          style={{ height: `${cals === 0 ? 0 : Math.max(8, barHeight)}%` }}
+                          className={`w-full rounded-t transition-all ${
+                            cals === 0
+                              ? 'bg-transparent'
+                              : isOver
+                              ? 'bg-coral-primary'
+                              : 'bg-lime-primary'
+                          }`}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {day.day_name.slice(0, 3)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 py-3">
+                No past records logged yet. As you record meals daily, your weekly calorie progress will appear here.
+              </p>
             )}
           </section>
         </>
