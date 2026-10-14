@@ -35,7 +35,7 @@ services:
       - key: GEMINI_MODEL
         value: gemini-3.8-flash
       - key: GEMINI_FALLBACK_MODEL
-        value: gemini-2.0-flash
+        value: ""
       - key: GEMINI_API_KEY
         sync: false
       - key: ALLOW_PLACEHOLDER_AI
@@ -45,7 +45,9 @@ services:
       - key: MAX_UPLOAD_SIZE_BYTES
         value: 10485760
       - key: AI_TIMEOUT_SECONDS
-        value: 30.0
+        value: 25.0
       - key: AI_PER_ATTEMPT_TIMEOUT_SECONDS
-        value: 12.0
+        value: 10.0
+      - key: AI_MAX_RETRIES
+        value: 1
 
