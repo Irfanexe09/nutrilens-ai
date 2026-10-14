@@ -5,10 +5,8 @@ import {
   Edit2,
   Trash2,
   Plus,
-  AlertTriangle,
   Info,
   Scale,
-  Sparkles,
   RotateCcw,
 } from 'lucide-react';
 import { DetectedFoodItem } from '../types';
@@ -141,15 +139,11 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
       {/* Title & Status */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-dark-border">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-lime-dim text-lime-primary text-xs font-bold border border-lime-primary/30 mb-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Multimodal Vision Verification</span>
-          </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Review Detected Foods
+            Confirm your meal
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Review and adjust detected food items and portion estimates before deterministic macro calculation.
+            Please check that we've identified your food correctly.
           </p>
         </div>
 
@@ -163,75 +157,25 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
       </div>
 
       {/* Main Container */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Image preview + AI confidence summary */}
-        <div className="space-y-4">
-          {imageUrl && (
-            <div className="bg-dark-card rounded-2xl border border-dark-border overflow-hidden shadow-lg">
+      <div className={`grid grid-cols-1 ${imageUrl ? 'lg:grid-cols-3' : ''} gap-6`}>
+        {/* Left Column: Image preview (if available) */}
+        {imageUrl && (
+          <div>
+            <div className="bg-dark-card rounded-2xl border border-dark-border overflow-hidden shadow-lg sticky top-24">
               <div className="p-3 border-b border-dark-border flex items-center justify-between text-xs text-slate-400">
-                <span className="font-semibold text-white">Scanned Image</span>
-                <span className="text-[11px] bg-lime-dim text-lime-primary px-2 py-0.5 rounded font-mono font-bold border border-lime-primary/20">
-                  Analyzed
-                </span>
+                <span className="font-semibold text-white">Your Photo</span>
               </div>
               <img
                 src={imageUrl}
                 alt="Analyzed food"
-                className="w-full h-48 object-cover object-center bg-dark-inner"
+                className="w-full h-56 object-cover object-center bg-dark-inner"
               />
             </div>
-          )}
-
-          {/* AI Confidence Card */}
-          <div className="bg-dark-card rounded-2xl border border-dark-border p-5 shadow-lg space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                Detection Confidence
-              </span>
-              <span className="font-extrabold text-white font-mono">
-                {Math.round(overallConfidence * 100)}%
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            <div className="h-2 w-full bg-dark-inner rounded-full overflow-hidden">
-              <div
-                style={{ width: `${Math.round(overallConfidence * 100)}%` }}
-                className={`h-full rounded-full transition-all ${
-                  overallConfidence >= 0.8
-                    ? 'bg-lime-primary'
-                    : overallConfidence >= 0.6
-                    ? 'bg-amber-400'
-                    : 'bg-coral-primary'
-                }`}
-              />
-            </div>
-
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Confidence is computed from feature separation, visual clarity, and dish boundaries.
-            </p>
           </div>
+        )}
 
-          {/* Identified Visual Uncertainties */}
-          {uncertainties.length > 0 && (
-            <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-2 text-xs text-amber-200">
-              <div className="flex items-center gap-1.5 font-bold text-amber-300">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>Documented Visual Uncertainties</span>
-              </div>
-              <ul className="space-y-1.5 text-[11px] text-amber-200/90 list-disc list-inside">
-                {uncertainties.map((u, i) => (
-                  <li key={i} className="leading-relaxed">
-                    {u}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Detected Foods List (2 Cols wide) */}
-        <div className="lg:col-span-2 space-y-4">
+        {/* Right Column: Detected Foods List */}
+        <div className={`${imageUrl ? 'lg:col-span-2' : ''} space-y-4`}>
           <div className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-dark-border">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -328,9 +272,6 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                                 <h4 className="text-sm font-bold text-white">
                                   {food.name}
                                 </h4>
-                                <span className="text-[10px] font-mono font-bold text-lime-primary bg-lime-dim px-2 py-0.5 rounded border border-lime-primary/20">
-                                  {Math.round(food.confidence * 100)}%
-                                </span>
                               </div>
 
                               <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5 font-mono">
@@ -383,7 +324,7 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                 className="w-full py-2.5 rounded-xl border border-dashed border-dark-border text-slate-400 hover:border-lime-primary hover:text-lime-primary text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add unlisted food item</span>
+                <span>Add another item</span>
               </button>
             ) : (
               <form
@@ -391,7 +332,7 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                 className="p-4 rounded-xl border border-lime-primary/30 bg-lime-dim/10 space-y-3"
               >
                 <span className="text-xs font-bold text-white block">
-                  Add Missing Food Item
+                  Add another item
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div className="sm:col-span-2">
@@ -440,17 +381,17 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                     type="submit"
                     className="px-3.5 py-1 text-xs font-bold bg-lime-primary text-lime-dark rounded-lg hover:bg-lime-hover"
                   >
-                    Add to Review
+                    Add Item
                   </button>
                 </div>
               </form>
             )}
 
-            {/* Informational callout */}
+            {/* Helpful Note */}
             <div className="flex items-center gap-2 p-3.5 rounded-xl bg-dark-inner border border-dark-border text-xs text-slate-400">
               <Info className="w-4 h-4 text-lime-primary shrink-0" />
               <span>
-                Confirm foods to compute deterministic macronutrient breakdowns using verified nutrition records.
+                Nutrition values are estimates. Tap "Edit" to adjust dish names or portions.
               </span>
             </div>
 
@@ -463,7 +404,7 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
                 className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-lime-primary hover:bg-lime-hover active:scale-[0.99] text-lime-dark font-extrabold text-sm shadow-lg shadow-lime-primary/10 transition-all disabled:opacity-50"
               >
                 <Check className="w-4 h-4" />
-                <span>Confirm Foods & Compute Nutrition ({foods.length} item{foods.length === 1 ? '' : 's'})</span>
+                <span>Confirm meal ({foods.length} {foods.length === 1 ? 'item' : 'items'})</span>
               </button>
             </div>
           </div>
@@ -473,10 +414,10 @@ export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
             <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 text-lime-primary text-xs space-y-1 animate-fadeIn">
               <div className="flex items-center gap-2 font-bold">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Foods Confirmed Successfully</span>
+                <span>Meal Confirmed</span>
               </div>
               <p className="text-slate-300 leading-relaxed">
-                Passing confirmed dishes to the deterministic nutrition engine...
+                Loading nutrition breakdown...
               </p>
             </div>
           )}
