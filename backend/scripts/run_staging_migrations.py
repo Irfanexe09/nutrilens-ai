@@ -47,6 +47,7 @@ MIGRATION_ORDER = [
     "4e07a1b66416",
     "a1b2c3d4e5f6",
     "b2c3d4e5f6a7",
+    "c3d4e5f6a7b8",
 ]
 
 
@@ -77,7 +78,9 @@ def reconcile_alembic_state(engine) -> None:
                 logger.warning("Existing application tables detected without alembic_version table. Bootstrapping Alembic version state...")
                 conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"))
 
-                if "users" in table_names:
+                if "weight_entries" in table_names:
+                    stamp = "c3d4e5f6a7b8"
+                elif "users" in table_names:
                     user_cols = {c["name"] for c in insp.get_columns("users")}
                     if "password_reset_token_hash" in user_cols:
                         stamp = "b2c3d4e5f6a7"

@@ -34,6 +34,12 @@ class User(Base):
         order_by="DailyNutritionTarget.created_at.desc()",
     )
     meals = relationship("Meal", back_populates="user", cascade="all, delete-orphan")
+    weight_entries = relationship(
+        "WeightEntry",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="WeightEntry.date.desc()",
+    )
 
 
 class UserProfile(Base):
