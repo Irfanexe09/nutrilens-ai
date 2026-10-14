@@ -99,7 +99,7 @@ describe('Dashboard Component - Health & Daily Nutrition Tracking', () => {
     },
   };
 
-  const mockWeekly: WeeklyAnalyticsResponse = {
+  const mockWeekly = {
     start_date: '2026-10-08',
     end_date: '2026-10-14',
     days: [
@@ -111,8 +111,15 @@ describe('Dashboard Component - Health & Daily Nutrition Tracking', () => {
         meal_count: 3,
         calories: 2150,
         protein: 125,
+        carbohydrates: 200,
+        fat: 60,
+        fiber: 20,
         calorie_target: 2200,
         protein_target: 130,
+        is_over_calorie_target: false,
+        overage_calories: 0,
+        calorie_percentage: 97,
+        protein_target_met: false,
       },
       {
         date: '2026-10-14',
@@ -122,8 +129,15 @@ describe('Dashboard Component - Health & Daily Nutrition Tracking', () => {
         meal_count: 2,
         calories: 1450,
         protein: 95,
+        carbohydrates: 150,
+        fat: 45,
+        fiber: 15,
         calorie_target: 2200,
         protein_target: 130,
+        is_over_calorie_target: false,
+        overage_calories: 0,
+        calorie_percentage: 65,
+        protein_target_met: false,
       },
     ],
     insights: {
@@ -131,10 +145,16 @@ describe('Dashboard Component - Health & Daily Nutrition Tracking', () => {
       total_days: 7,
       average_calories_logged_days: 1800,
       average_protein_logged_days: 110,
+      average_carbs_logged_days: 175,
+      average_fat_logged_days: 52.5,
+      average_fiber_logged_days: 17.5,
+      protein_target_met_days: 0,
+      highest_calorie_day: null,
+      lowest_calorie_day: null,
       disclaimer: 'Trend analytics.',
       insights_statements: ['Good protein adherence.'],
     },
-  };
+  } as WeeklyAnalyticsResponse;
 
   beforeEach(() => {
     vi.restoreAllMocks();
