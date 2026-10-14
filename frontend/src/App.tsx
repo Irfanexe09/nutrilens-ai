@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { Hero } from './components/Hero';
+import { Dashboard } from './components/Dashboard';
+import { MealHistory } from './components/MealHistory';
+import { MealDetailModal } from './components/MealDetailModal';
 import { ScanFood } from './components/ScanFood';
 import { AnalysisResult } from './components/AnalysisResult';
-import { FoodCatalog } from './components/FoodCatalog';
-import { Dashboard } from './components/Dashboard';
 import { Profile } from './components/Profile';
 import { Footer } from './components/Footer';
 import { api } from './services/api';
-import { HealthStatus, FoodItem, MealItem, FoodAnalysisResponse, DetectedFoodItem } from './types';
+import { HealthStatus, FoodItem, MealItem, FoodAnalysisResponse, DetectedFoodItem, DailyMealItem } from './types';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
@@ -18,6 +18,7 @@ export const App: React.FC = () => {
   const [activeMealItems, setActiveMealItems] = useState<MealItem[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | undefined>(undefined);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [selectedMealDetail, setSelectedMealDetail] = useState<DailyMealItem | null>(null);
 
   useEffect(() => {
     // Check API and Database Health
@@ -169,45 +170,25 @@ export const App: React.FC = () => {
     setActiveTab('demo');
   };
 
-  const handleSelectFromCatalog = (food: FoodItem) => {
-    setActiveMealItems([
-      {
-        food_id: food.id,
-        food_name: food.name,
-        serving_count: 1.0,
-        serving_size: food.serving_size,
-        serving_unit: food.serving_unit,
-        calories: food.calories,
-        protein: food.protein,
-        carbohydrates: food.carbohydrates,
-        fat: food.fat,
-        fiber: food.fiber,
-        uncertainty_pct: food.uncertainty_pct,
-      },
-    ]);
-    setIsDemoMode(false);
-    setPreviewImageUrl(undefined);
-    setActiveTab('demo');
-  };
-
   return (
     <div className="min-h-screen bg-dark-bg text-slate-100 flex flex-col font-sans antialiased selection:bg-lime-dim selection:text-lime-primary">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} health={health} />
 
       <main className="flex-1">
         {activeTab === 'home' && (
-          <Hero
-            onScanClick={() => setActiveTab('scan')}
-            onDemoClick={handleLaunchDemo}
-            onCatalogClick={() => setActiveTab('catalog')}
-          />
-        )}
-
-        {activeTab === 'dashboard' && (
           <Dashboard
             onLogMealClick={() => setActiveTab('scan')}
             onConfigureProfileClick={() => setActiveTab('profile')}
           />
+        )}
+
+        {activeTab === 'history' && (
+          <div className="max-w-3xl mx-auto px-4 py-8">
+            <MealHistory
+              onSelectMeal={(meal) => setSelectedMealDetail(meal)}
+              onLogMeal={() => setActiveTab('scan')}
+            />
+          </div>
         )}
 
         {activeTab === 'profile' && (
@@ -222,7 +203,6 @@ export const App: React.FC = () => {
           />
         )}
 
-
         {activeTab === 'demo' && (
           <AnalysisResult
             initialItems={activeMealItems}
@@ -232,14 +212,14 @@ export const App: React.FC = () => {
             availableFoods={availableFoods}
           />
         )}
-
-        {activeTab === 'catalog' && (
-          <FoodCatalog
-            foods={availableFoods}
-            onSelectForMeal={handleSelectFromCatalog}
-          />
-        )}
       </main>
+
+      {selectedMealDetail && (
+        <MealDetailModal
+          meal={selectedMealDetail}
+          onClose={() => setSelectedMealDetail(null)}
+        />
+      )}
 
       <Footer />
     </div>
