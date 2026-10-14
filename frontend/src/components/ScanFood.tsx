@@ -282,14 +282,11 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8 animate-fadeIn">
       {/* Title */}
       <div className="text-center space-y-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
-          Multimodal Vision Pipeline
-        </span>
         <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          Food Image Analysis
+          What's on your plate?
         </h2>
         <p className="text-xs sm:text-sm text-slate-400 max-w-lg mx-auto">
-          Photograph your meal. Multimodal AI directly identifies dishes, estimates portion volume, and surfaces honest visual uncertainty margins.
+          Take a photo or upload an image to estimate its nutrition. Make sure your food is well-lit and clearly visible.
         </p>
       </div>
 
@@ -343,10 +340,10 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
               </div>
 
               <h3 className="text-base font-bold text-white mb-1">
-                Upload your meal photograph
+                Take or upload a food photo
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto mb-6">
-                Drag & drop your food photo here, or select from device. Supports JPEG, PNG, and WEBP up to 10MB.
+                Drag & drop your food photo here, or select from device. Supports JPEG, PNG, and WebP up to 10MB.
               </p>
 
               {/* Upload & Camera Buttons */}
@@ -438,61 +435,33 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
 
             {/* Metadata bar */}
             {selectedFile && (
-              <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 bg-dark-inner rounded-xl px-4 py-2.5 border border-dark-border font-mono">
-                <div className="flex items-center gap-2">
-                  <FileImage className="w-4 h-4 text-lime-primary" />
-                  <span className="font-medium text-white">{selectedFile.name}</span>
+              <div className="flex items-center justify-between text-xs text-slate-400 bg-dark-inner rounded-xl px-4 py-2.5 border border-dark-border">
+                <div className="flex items-center gap-2 truncate">
+                  <FileImage className="w-4 h-4 text-lime-primary shrink-0" />
+                  <span className="font-medium text-white truncate">{selectedFile.name}</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-dark-card text-lime-primary border border-lime-primary/30">
-                    Direct AI Vision
-                  </span>
-                  <span>{(selectedFile.size / 1024).toFixed(1)} KB</span>
-                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-dark-card text-lime-primary border border-lime-primary/30 shrink-0">
+                  Direct AI Vision
+                </span>
               </div>
             )}
 
-            {/* Loading Indicator with cancel button & 3-stage breadcrumb */}
+            {/* Calm Loading Indicator with cancel button */}
             {isLoading && (
-              <div className="p-4 rounded-xl bg-lime-dim border border-lime-primary/30 space-y-3 animate-fadeIn">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Loader2 className="w-5 h-5 text-lime-primary animate-spin shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">
-                        {loadingStep}
-                      </div>
-                      <div className="text-[11px] text-lime-primary/90">
-                        {pipelineStage === 'validating' && 'Verifying food image resolution and MIME format...'}
-                        {pipelineStage === 'analyzing' && 'Direct multimodal AI is evaluating food items and estimating portion volume...'}
-                      </div>
-                    </div>
-                  </div>
-
+              <div className="p-6 rounded-2xl bg-dark-inner border border-lime-primary/30 text-center space-y-3 animate-fadeIn">
+                <Loader2 className="w-8 h-8 text-lime-primary animate-spin mx-auto" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-white">Identifying your food…</h4>
+                  <p className="text-xs text-slate-400">Estimating portions and nutrition…</p>
+                </div>
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={handleCancel}
-                    className="px-2.5 py-1 text-xs font-semibold text-coral-primary hover:text-white bg-dark-inner hover:bg-coral-primary/20 border border-coral-primary/30 rounded-lg transition-colors shrink-0"
+                    className="px-3.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-dark-card hover:bg-dark-cardHover border border-dark-border rounded-xl transition-colors"
                   >
                     Cancel
                   </button>
-                </div>
-
-                {/* 3-Stage Pipeline Stepper */}
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-lime-primary/20 text-[10px] font-mono">
-                  <div className="flex items-center gap-1.5 text-lime-primary font-bold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-lime-primary" />
-                    <span>1. Validating Image</span>
-                  </div>
-
-                  <div className={`flex items-center gap-1.5 ${pipelineStage === 'analyzing' ? 'text-lime-primary font-bold' : 'text-slate-400'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${pipelineStage === 'analyzing' ? 'bg-lime-primary animate-pulse' : 'bg-slate-500'}`} />
-                    <span>2. Direct AI Vision Analysis</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                    <span>3. Nutrition Breakdown</span>
-                  </div>
                 </div>
               </div>
             )}
