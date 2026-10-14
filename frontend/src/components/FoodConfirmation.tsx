@@ -39,8 +39,8 @@ const getFoodEmoji = (name: string): string => {
 
 export const FoodConfirmation: React.FC<FoodConfirmationProps> = ({
   initialFoods,
-  overallConfidence,
-  uncertainties,
+  overallConfidence: _overallConfidence,
+  uncertainties: _uncertainties,
   imageUrl,
   onConfirm,
   onScanAnother,

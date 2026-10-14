@@ -108,7 +108,7 @@ describe('AnalysisResult Component - Meal Persistence & Duplicate Protection', (
       })
     );
 
-    expect(await screen.findByText(/Meal recorded successfully as lunch!/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Meal saved successfully!/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /meal logged/i })).toBeDisabled();
   });
 
@@ -141,7 +141,7 @@ describe('AnalysisResult Component - Meal Persistence & Duplicate Protection', (
     // Resolve in-flight save
     resolveSave!(mockSavedMeal);
     await waitFor(() => {
-      expect(screen.getByText(/Meal recorded successfully as lunch!/i)).toBeInTheDocument();
+      expect(screen.getByText(/Meal saved successfully!/i)).toBeInTheDocument();
     });
   });
 

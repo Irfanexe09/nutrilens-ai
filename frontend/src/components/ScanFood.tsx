@@ -38,7 +38,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<ScanPipelineStage>('idle');
-  const [loadingStep, setLoadingStep] = useState<string>('Analyzing your meal...');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // References for cancellation and double-click prevention
@@ -132,9 +131,7 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     abortControllerRef.current = controller;
 
     try {
-      // Direct AI Vision Analysis (bypassing Firebase Cloud Storage)
       setPipelineStage('analyzing');
-      setLoadingStep('Direct AI vision evaluating food items and estimating portion sizes...');
 
       const response = await api.analyzeImage(selectedFile, controller.signal);
       setAnalysisResult(response);
@@ -186,7 +183,6 @@ export const ScanFood: React.FC<ScanFoodProps> = ({
     }
     setPipelineStage('idle');
     isSubmittingRef.current = false;
-    setLoadingStep('');
     setErrorMessage('Meal analysis was canceled by user.');
   };
 

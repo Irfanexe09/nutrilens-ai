@@ -159,8 +159,8 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       });
       setSavedMealId(saved.id);
       setIsSaved(true);
-      setSaveSuccessMessage(`Meal recorded successfully as ${selectedMealType}!`);
-      setTimeout(() => setSaveSuccessMessage(null), 4000);
+      setSaveSuccessMessage('Meal saved successfully!');
+      setTimeout(() => setSaveSuccessMessage(null), 5000);
       return saved.id;
     } catch (err: any) {
       console.error('Save failed:', err);
@@ -276,19 +276,19 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Nutritional Breakdown
+              Nutrition Summary
             </h2>
             {isRecalculating && (
               <Loader2 className="w-4 h-4 animate-spin text-lime-primary" />
             )}
             {isDemo && (
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-lime-dim text-lime-primary border border-lime-primary/30">
-                Interactive Demo
+                Sample Meal
               </span>
             )}
           </div>
           <p className="text-xs text-slate-400">
-            Deterministic macronutrient calculations based on verified biochemical records.
+            Nutrition values are estimates based on your meal items.
           </p>
         </div>
 
@@ -315,7 +315,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
               isSaved
                 ? 'bg-dark-inner text-lime-primary border border-lime-primary/30'
-                : 'bg-dark-card text-white border border-dark-border hover:bg-dark-cardHover'
+                : 'bg-lime-primary text-lime-dark hover:bg-lime-hover shadow-lg shadow-lime-primary/10'
             } disabled:opacity-50`}
           >
             {isSavingMeal ? (
@@ -325,27 +325,8 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
               </>
             ) : (
               <>
-                <BookmarkCheck className="w-4 h-4 text-lime-primary" />
+                <BookmarkCheck className="w-4 h-4" />
                 <span>{isSaved ? 'Meal Logged' : 'Log Meal'}</span>
-              </>
-            )}
-          </button>
-
-          {/* Primary Optimizer CTA */}
-          <button
-            onClick={() => handleTriggerOptimization()}
-            disabled={items.length === 0 || isOptimizing || isSavingMeal}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-lime-primary hover:bg-lime-hover text-lime-dark text-xs font-extrabold transition-all shadow-lg shadow-lime-primary/10"
-          >
-            {isOptimizing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Optimizing...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>Optimize Meal</span>
               </>
             )}
           </button>
@@ -353,9 +334,17 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       </div>
 
       {saveSuccessMessage && (
-        <div className="p-3.5 bg-lime-dim border border-lime-primary/30 text-lime-primary text-xs rounded-xl flex items-center gap-2 animate-fadeIn font-medium">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{saveSuccessMessage}</span>
+        <div className="p-4 bg-lime-dim border border-lime-primary/30 text-lime-primary text-xs rounded-xl flex items-center justify-between gap-3 animate-fadeIn font-medium">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span className="font-bold">{saveSuccessMessage}</span>
+          </div>
+          <button
+            onClick={onScanAnother}
+            className="px-3 py-1.5 bg-lime-primary text-lime-dark font-extrabold rounded-lg hover:bg-lime-hover transition-colors text-xs"
+          >
+            Scan Another Meal
+          </button>
         </div>
       )}
 
@@ -380,10 +369,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           {previewImageUrl && (
             <div className="bg-dark-card rounded-2xl border border-dark-border overflow-hidden shadow-lg">
               <div className="p-3 border-b border-dark-border flex items-center justify-between text-xs text-slate-400">
-                <span className="font-semibold text-white">Analyzed Photograph</span>
-                <span className="text-[10px] bg-dark-inner px-2 py-0.5 rounded text-slate-300 font-mono">
-                  Vision Input
-                </span>
+                <span className="font-semibold text-white">Your Photo</span>
               </div>
               <img
                 src={previewImageUrl}
@@ -394,42 +380,19 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           )}
 
           {/* Primary Calorie Card */}
-          <div className="bg-gradient-to-br from-dark-card to-dark-elevated rounded-2xl border border-dark-border p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Deterministic Energy
-              </span>
-              <span
-                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                  nutrition?.confidence_level === 'HIGH'
-                    ? 'bg-lime-dim text-lime-primary border-lime-primary/30'
-                    : 'bg-amber-400/10 text-amber-300 border-amber-400/30'
-                }`}
-              >
-                {nutrition?.confidence_level || 'MEDIUM'} Confidence
-              </span>
-            </div>
+          <div className="bg-gradient-to-br from-dark-card to-dark-elevated rounded-2xl border border-dark-border p-6 shadow-xl space-y-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Total Calories
+            </span>
 
             <div>
               <div className="text-4xl font-black text-white tracking-tight">
-                ~{nutrition ? Math.round(nutrition.total_calories) : '—'}{' '}
+                {nutrition ? Math.round(nutrition.total_calories) : '—'}{' '}
                 <span className="text-sm font-semibold text-slate-400">kcal</span>
               </div>
-              {nutrition && (
-                <div className="text-xs font-mono text-slate-400 mt-1">
-                  Range: {Math.round(nutrition.calorie_min)} – {Math.round(nutrition.calorie_max)} kcal (±
-                  {Math.round(nutrition.uncertainty_calories)} kcal)
-                </div>
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-dark-border text-xs text-slate-400 space-y-1">
-              <div className="flex items-start gap-1.5">
-                <Info className="w-3.5 h-3.5 text-lime-primary shrink-0 mt-0.5" />
-                <span className="leading-relaxed text-[11px]">
-                  Uncertainty accounts for cooking oil absorption and visual 2D depth variance.
-                </span>
-              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Nutrition values are estimates.
+              </p>
             </div>
           </div>
 
@@ -445,7 +408,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 <div className="flex justify-between text-xs font-medium mb-1.5">
                   <span className="text-sky-400 font-semibold">Protein</span>
                   <span className="text-white font-mono font-bold">
-                    {nutrition ? nutrition.total_protein.toFixed(1) : 0} g
+                    {nutrition ? Math.round(nutrition.total_protein) : 0}g
                   </span>
                 </div>
                 <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
@@ -463,7 +426,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 <div className="flex justify-between text-xs font-medium mb-1.5">
                   <span className="text-amber-400 font-semibold">Carbohydrates</span>
                   <span className="text-white font-mono font-bold">
-                    {nutrition ? nutrition.total_carbohydrates.toFixed(1) : 0} g
+                    {nutrition ? Math.round(nutrition.total_carbohydrates) : 0}g
                   </span>
                 </div>
                 <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
@@ -481,7 +444,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 <div className="flex justify-between text-xs font-medium mb-1.5">
                   <span className="text-rose-400 font-semibold">Fat</span>
                   <span className="text-white font-mono font-bold">
-                    {nutrition ? nutrition.total_fat.toFixed(1) : 0} g
+                    {nutrition ? Math.round(nutrition.total_fat) : 0}g
                   </span>
                 </div>
                 <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
@@ -499,7 +462,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 <div className="flex justify-between text-xs font-medium mb-1.5">
                   <span className="text-lime-primary font-semibold">Dietary Fiber</span>
                   <span className="text-white font-mono font-bold">
-                    {nutrition ? nutrition.total_fiber.toFixed(1) : 0} g
+                    {nutrition ? Math.round(nutrition.total_fiber) : 0}g
                   </span>
                 </div>
                 <div className="w-full bg-dark-inner h-2 rounded-full overflow-hidden">
@@ -520,9 +483,9 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           {/* Confirmed Food Items List */}
           <div className="bg-dark-card rounded-2xl border border-dark-border p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-dark-border">
-              <h3 className="text-base font-bold text-white">Confirmed Dishes & Portions</h3>
-              <span className="text-xs text-slate-400 font-mono">
-                {items.length} {items.length === 1 ? 'item' : 'items'} in meal
+              <h3 className="text-base font-bold text-white">Your Meal Items</h3>
+              <span className="text-xs text-slate-400 font-medium">
+                {items.length} {items.length === 1 ? 'item' : 'items'}
               </span>
             </div>
 
@@ -531,8 +494,8 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 <div key={idx} className="py-3 flex items-center justify-between gap-4">
                   <div>
                     <h4 className="text-sm font-bold text-white">{item.food_name}</h4>
-                    <p className="text-xs text-slate-400 font-mono">
-                      Serving: {item.portion_value} {item.portion_unit || item.serving_unit}
+                    <p className="text-xs text-slate-400">
+                      {Math.round(item.calories * item.serving_count)} kcal • {Math.round(item.protein * item.serving_count)}g protein
                     </p>
                   </div>
 
@@ -638,9 +601,9 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Optimize My Meal</h3>
+                  <h3 className="text-base font-bold text-white">Meal Suggestions</h3>
                   <p className="text-xs text-slate-400">
-                    Deterministic alternatives tailored to your target with AI explanations.
+                    Helpful adjustments to balance your calories and protein.
                   </p>
                 </div>
               </div>
