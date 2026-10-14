@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Filter,
   Calendar,
-  Sparkles,
   ChevronLeft,
   ChevronRight,
   Clock,
   Utensils,
   X,
+  Camera,
+  Filter,
 } from 'lucide-react';
 import { api } from '../services/api';
-import { Meal, DailyMealItem } from '../types';
+import { Meal, DailyMealItem, WeeklyAnalyticsResponse } from '../types';
 
 interface MealHistoryProps {
   onSelectMeal: (meal: DailyMealItem) => void;
@@ -27,11 +27,19 @@ export const MealHistory: React.FC<MealHistoryProps> = ({ onSelectMeal, onLogMea
   // Filters
   const [selectedMealType, setSelectedMealType] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [versionFilter, setVersionFilter] = useState<'all' | 'original' | 'optimized'>('all');
+
+  // Weekly analytics
+  const [weeklyData, setWeeklyData] = useState<WeeklyAnalyticsResponse | null>(null);
+
+  useEffect(() => {
+    if (api.getToken()) {
+      api.getWeeklyAnalytics().then(setWeeklyData).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     loadMeals();
-  }, [page, selectedMealType, selectedDate, versionFilter]);
+  }, [page, selectedMealType, selectedDate]);
 
   const loadMeals = async () => {
     setLoading(true);
@@ -39,8 +47,6 @@ export const MealHistory: React.FC<MealHistoryProps> = ({ onSelectMeal, onLogMea
       const filters: any = {};
       if (selectedMealType !== 'all') filters.meal_type = selectedMealType;
       if (selectedDate) filters.date = selectedDate;
-      if (versionFilter === 'original') filters.is_optimized_version = false;
-      if (versionFilter === 'optimized') filters.is_optimized_version = true;
 
       const res = await api.getMeals(page * limit, limit, filters);
       setMeals(res.meals);
@@ -55,138 +61,186 @@ export const MealHistory: React.FC<MealHistoryProps> = ({ onSelectMeal, onLogMea
   const handleClearFilters = () => {
     setSelectedMealType('all');
     setSelectedDate('');
-    setVersionFilter('all');
     setPage(0);
   };
 
   const totalPages = Math.ceil(total / limit);
 
+  // Group meals by date
+  const getDateLabel = (dateStr?: string) => {
+    if (!dateStr) return 'Past Meals';
+    const cleanDate = dateStr.split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    if (cleanDate === today) return 'Today';
+    if (cleanDate === yesterday) return 'Yesterday';
+
+    try {
+      return new Date(cleanDate + 'T00:00:00').toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return cleanDate;
+    }
+  };
+
+  const hasActiveFilters = selectedMealType !== 'all' || selectedDate !== '';
+
   return (
     <div className="space-y-6">
-      {/* Top Filter Bar */}
-      <div className="bg-dark-card rounded-2xl border border-dark-border p-4 shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-lime-primary" />
-            <h3 className="text-sm font-bold text-white">Meal History Filters</h3>
+      {/* 7-Day Calorie Summary */}
+      {weeklyData && weeklyData.days && weeklyData.days.length > 0 && (
+        <section aria-labelledby="weekly-summary-heading" className="bg-dark-card rounded-2xl border border-dark-border p-5 space-y-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 id="weekly-summary-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Past 7 Days
+            </h2>
+            <span className="text-[11px] text-slate-400">
+              Daily Target: {weeklyData.days[weeklyData.days.length - 1]?.calorie_target || 2000} kcal
+            </span>
           </div>
 
-          {(selectedMealType !== 'all' || selectedDate !== '' || versionFilter !== 'all') && (
-            <button
-              onClick={handleClearFilters}
-              className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-1 self-start sm:self-auto transition"
-            >
-              <X className="w-3.5 h-3.5" />
-              Reset Filters
-            </button>
-          )}
+          <div className="grid grid-cols-7 gap-2 pt-2 items-end h-28">
+            {weeklyData.days.map((day, i) => {
+              const target = day.calorie_target || 2000;
+              const cal = day.calories || 0;
+              const heightPct = Math.min(100, Math.round((cal / target) * 100));
+              const isOver = cal > target;
+
+              return (
+                <div key={i} className="flex flex-col items-center h-full justify-end gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {cal > 0 ? Math.round(cal) : ''}
+                  </span>
+                  <div className="w-full bg-dark-inner rounded-t-lg h-16 flex items-end overflow-hidden p-0.5">
+                    <div
+                      style={{ height: `${cal === 0 ? 0 : Math.max(8, heightPct)}%` }}
+                      className={`w-full rounded-t transition-all duration-300 ${
+                        cal === 0
+                          ? 'bg-transparent'
+                          : isOver
+                          ? 'bg-coral-primary'
+                          : 'bg-lime-primary'
+                      }`}
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {day.day_name.slice(0, 3)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Filter Bar */}
+      <div className="bg-dark-card rounded-2xl border border-dark-border p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-lime-primary shrink-0" />
+          <span className="text-xs font-bold text-white">Filter Meals</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Meal Type Filter */}
-          <div>
-            <label className="block text-[11px] font-bold text-dark-muted uppercase tracking-wider mb-1">
-              Meal Category
-            </label>
-            <select
-              value={selectedMealType}
-              onChange={(e) => {
-                setSelectedMealType(e.target.value);
-                setPage(0);
-              }}
-              className="w-full text-xs bg-dark-inner border border-dark-border rounded-xl px-3 py-2 text-slate-200 font-semibold focus:border-lime-primary focus:ring-1 focus:ring-lime-primary/30 outline-none"
-            >
-              <option value="all">All Categories</option>
-              <option value="breakfast">Breakfast</option>
-              <option value="lunch">Lunch</option>
-              <option value="dinner">Dinner</option>
-              <option value="snack">Snack</option>
-            </select>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Category */}
+          <select
+            value={selectedMealType}
+            onChange={(e) => {
+              setSelectedMealType(e.target.value);
+              setPage(0);
+            }}
+            className="text-xs bg-dark-inner border border-dark-border rounded-xl px-3 py-1.5 text-slate-200 font-semibold focus:border-lime-primary outline-none"
+          >
+            <option value="all">All Categories</option>
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snack</option>
+          </select>
 
-          {/* Date Filter */}
-          <div>
-            <label className="block text-[11px] font-bold text-dark-muted uppercase tracking-wider mb-1">
-              Calendar Date
-            </label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                setSelectedDate(e.target.value);
-                setPage(0);
-              }}
-              className="w-full text-xs bg-dark-inner border border-dark-border rounded-xl px-3 py-2 text-slate-200 font-semibold focus:border-lime-primary focus:ring-1 focus:ring-lime-primary/30 outline-none"
-            />
-          </div>
+          {/* Date */}
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              setPage(0);
+            }}
+            className="text-xs bg-dark-inner border border-dark-border rounded-xl px-2.5 py-1.5 text-slate-200 font-semibold focus:border-lime-primary outline-none"
+          />
 
-          {/* Version Filter */}
-          <div>
-            <label className="block text-[11px] font-bold text-dark-muted uppercase tracking-wider mb-1">
-              Optimizer Version
-            </label>
-            <select
-              value={versionFilter}
-              onChange={(e) => {
-                setVersionFilter(e.target.value as any);
-                setPage(0);
-              }}
-              className="w-full text-xs bg-dark-inner border border-dark-border rounded-xl px-3 py-2 text-slate-200 font-semibold focus:border-lime-primary focus:ring-1 focus:ring-lime-primary/30 outline-none"
+          {hasActiveFilters && (
+            <button
+              onClick={handleClearFilters}
+              className="text-xs font-semibold text-coral-primary hover:text-white flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-dark-inner hover:bg-dark-cardHover transition"
             >
-              <option value="all">All Versions</option>
-              <option value="original">Original Meals Only</option>
-              <option value="optimized">Optimized Versions Only</option>
-            </select>
-          </div>
+              <X className="w-3.5 h-3.5" />
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
       {/* Meals List */}
       {loading ? (
-        <div className="py-16 text-center">
-          <div className="w-8 h-8 border-3 border-lime-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-dark-muted">Loading meal records...</p>
+        <div className="py-16 text-center space-y-2">
+          <div className="w-8 h-8 border-2 border-lime-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-slate-400">Loading your meal records...</p>
         </div>
       ) : meals.length === 0 ? (
-        <div className="bg-dark-card rounded-2xl border border-dashed border-dark-border p-12 text-center space-y-3">
-          <Utensils className="w-10 h-10 text-slate-600 mx-auto" />
-          <h4 className="text-sm font-bold text-white">No Meals Found</h4>
-          <p className="text-xs text-dark-muted max-w-sm mx-auto">
-            No saved meals matched the selected filters. Clear your filters or log a meal photo to record your nutrition.
-          </p>
-          <div className="flex items-center justify-center gap-2 pt-2">
-            <button
-              onClick={handleClearFilters}
-              className="px-3.5 py-1.5 bg-dark-inner hover:bg-dark-border text-slate-300 text-xs font-semibold rounded-xl border border-dark-border transition"
-            >
-              Clear Filters
-            </button>
+        <div className="bg-dark-card rounded-2xl border border-dashed border-dark-border p-12 text-center space-y-4">
+          <div className="w-12 h-12 rounded-xl bg-dark-inner text-lime-primary flex items-center justify-center mx-auto border border-dark-border">
+            <Utensils className="w-5 h-5" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-white">
+              {hasActiveFilters ? 'No meals found' : 'No meals logged yet.'}
+            </h3>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              {hasActiveFilters
+                ? 'No saved meals matched the selected filters. Clear your filters or log a meal photo.'
+                : 'Start by scanning your first meal.'}
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 pt-1">
+            {hasActiveFilters && (
+              <button
+                onClick={handleClearFilters}
+                className="px-4 py-2 bg-dark-inner hover:bg-dark-cardHover text-slate-300 text-xs font-semibold rounded-xl border border-dark-border transition"
+              >
+                Clear Filters
+              </button>
+            )}
             <button
               onClick={onLogMeal}
-              className="px-4 py-1.5 bg-lime-primary hover:bg-lime-hover text-dark-bg text-xs font-bold rounded-xl shadow-xs transition"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-lime-primary hover:bg-lime-hover text-lime-dark text-xs font-extrabold rounded-xl shadow-md transition"
             >
-              Scan Food
+              <Camera className="w-4 h-4" />
+              <span>Scan Food</span>
             </button>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-dark-muted px-1">
+          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
             <span>
               Showing {page * limit + 1}–{Math.min((page + 1) * limit, total)} of {total} meals
             </span>
           </div>
 
-          <div className="divide-y divide-dark-border/40 bg-dark-card rounded-2xl border border-dark-border shadow-2xs overflow-hidden">
+          <div className="space-y-2.5">
             {meals.map((meal) => {
               const foodNames = meal.items?.map((it) => it.food_name) || [];
-              const dateStr = meal.created_at ? meal.created_at.split('T')[0] : '';
               const timeStr = meal.created_at
                 ? new Date(meal.created_at).toLocaleTimeString([], {
                     hour: 'numeric',
                     minute: '2-digit',
                   })
                 : '';
+              const dateLabel = getDateLabel(meal.created_at);
 
               const dailyMealItem: DailyMealItem = {
                 id: meal.id,
@@ -201,7 +255,7 @@ export const MealHistory: React.FC<MealHistoryProps> = ({ onSelectMeal, onLogMea
                 fiber: meal.total_fiber,
                 formatted_estimate:
                   meal.formatted_estimate ||
-                  `Estimated: ~${Math.round(meal.total_calories)} kcal (±${Math.round(meal.uncertainty_calories)} kcal)`,
+                  `Estimated: ~${Math.round(meal.total_calories)} kcal`,
                 item_count: meal.items?.length || 0,
                 food_names: foodNames,
                 parent_meal_id: meal.parent_meal_id,
@@ -214,55 +268,48 @@ export const MealHistory: React.FC<MealHistoryProps> = ({ onSelectMeal, onLogMea
                 <div
                   key={meal.id}
                   onClick={() => onSelectMeal(dailyMealItem)}
-                  className="p-4 hover:bg-dark-inner/60 cursor-pointer transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                  className="p-3.5 rounded-xl bg-dark-card border border-dark-border hover:border-lime-primary/30 cursor-pointer transition flex items-center justify-between gap-3 group"
                 >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-lime-primary bg-lime-primary/10 px-2 py-0.5 rounded border border-lime-primary/30">
-                        {meal.meal_type}
-                      </span>
-                      {meal.is_optimized_version && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/30 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-sky-400" />
-                          Optimized Alternative
-                        </span>
-                      )}
-                      <span className="text-xs font-bold text-white truncate">
-                        {foodNames.length > 0 ? foodNames.join(', ') : `${meal.meal_type} meal`}
-                      </span>
-                    </div>
-
-                    {meal.is_optimized_version && meal.optimization_notes && (
-                      <p className="text-xs text-sky-300/90 italic">"{meal.optimization_notes}"</p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {meal.image_url ? (
+                      <img
+                        src={meal.image_url}
+                        alt=""
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 bg-dark-inner border border-dark-border"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-dark-inner text-lime-primary flex items-center justify-center shrink-0 border border-dark-border font-bold text-xs uppercase">
+                        {meal.meal_type.slice(0, 2)}
+                      </div>
                     )}
 
-                    <div className="flex items-center gap-3 text-xs text-dark-muted">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                        {dateStr}
-                      </span>
-                      {timeStr && (
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="font-semibold text-white text-sm truncate group-hover:text-lime-primary transition-colors">
+                        {foodNames.length > 0 ? foodNames.join(', ') : `${meal.meal_type} meal`}
+                      </div>
+                      <div className="text-xs text-slate-400 flex items-center gap-1.5 flex-wrap">
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-slate-500" />
-                          {timeStr}
+                          <Calendar className="w-3 h-3 text-slate-500" />
+                          {dateLabel}
                         </span>
-                      )}
-                      <span>·</span>
-                      <span>{meal.items?.length || 0} items</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-500" />
+                          {timeStr || meal.meal_type}
+                        </span>
+                        <span>•</span>
+                        <span className="capitalize">{meal.meal_type}</span>
+                      </div>
                     </div>
                   </div>
 
                   <div className="text-right shrink-0">
-                    <div className="text-base font-black text-white">
-                      ~{Math.round(meal.total_calories)}{' '}
-                      <span className="text-xs font-normal text-dark-muted font-sans">kcal</span>
+                    <div className="text-sm font-bold text-white">
+                      {Math.round(meal.total_calories)} kcal
                     </div>
-                    <div className="text-[11px] text-dark-muted font-mono mt-0.5">
-                      {meal.total_protein}g P · {meal.total_carbohydrates}g C · {meal.total_fat}g F · {meal.total_fiber}g Fib
+                    <div className="text-[11px] text-slate-400">
+                      {Math.round(meal.total_protein)}g protein
                     </div>
-                    <span className="text-[11px] text-lime-primary font-semibold group-hover:underline block mt-1">
-                      Inspect breakdown →
-                    </span>
                   </div>
                 </div>
               );
@@ -281,7 +328,7 @@ export const MealHistory: React.FC<MealHistoryProps> = ({ onSelectMeal, onLogMea
                 Previous
               </button>
 
-              <span className="text-xs text-dark-muted font-semibold">
+              <span className="text-xs text-slate-400 font-semibold">
                 Page {page + 1} of {totalPages}
               </span>
 
